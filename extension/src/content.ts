@@ -20,6 +20,7 @@ function playAlarmSound(): void {
   osc.stop(ctx.currentTime + 0.8);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function showOverlay(message: string, _level: number): void {
   document.getElementById('adhd-overlay')?.remove();
 

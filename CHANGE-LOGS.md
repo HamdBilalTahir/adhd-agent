@@ -47,6 +47,16 @@
 
 ---
 
+> ### ESLint — extension source files covered, chrome global, inline suppression
+>
+> - **What changed:** Added a dedicated ESLint flat-config block for `extension/src/**/*.ts`. Imports `globals.browser` (provides `console`, `fetch`, `setTimeout`, etc.) and adds `chrome: "readonly"` on top — eliminating the "File ignored because no matching configuration was supplied" warning and the `no-undef` errors that came from the service-worker globals. Added `extension/dist/` to the top-level `ignores` so compiled output is never linted. Added an inline `// eslint-disable-next-line @typescript-eslint/no-unused-vars` in `content.ts` above `showOverlay` to suppress the `_level` unused-parameter error at the call site rather than relaxing the rule project-wide.
+> - **Why:** The extension lives outside `src/` so the existing Next.js-oriented config didn't cover it. Service-worker globals (`fetch`, `console`) aren't in the default ESLint environment, and `chrome` is extension-specific. The `_level` parameter is kept in the signature for type alignment with `OverlayMessage` but isn't used at runtime — a targeted inline suppress is more precise than a blanket `argsIgnorePattern`.
+> - **Files:**
+>   - `eslint.config.mjs`
+>   - `extension/src/content.ts` (inline eslint-disable comment)
+
+---
+
 > ### Production domain wired up — Vercel deployment URL set
 >
 > - **What changed:** Set the production domain `https://adhd-agent-system.vercel.app` in two places: `API_URL` constant in `extension/src/background.ts` (controls where the extension posts heartbeat and response events) and `NEXT_PUBLIC_APP_URL` in `.env` (controls the check-in link in supervisor alert emails). Rebuilt the extension dist so the new URL is baked into `extension/dist/background.js`. Created `vercel.json` with `{ "github": { "silent": true } }` to suppress Vercel's automatic PR deployment comments on GitHub.
