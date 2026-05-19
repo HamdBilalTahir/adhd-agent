@@ -47,6 +47,17 @@
 
 ---
 
+> ### Production domain wired up — Vercel deployment URL set
+>
+> - **What changed:** Set the production domain `https://adhd-agent-system.vercel.app` in two places: `API_URL` constant in `extension/src/background.ts` (controls where the extension posts heartbeat and response events) and `NEXT_PUBLIC_APP_URL` in `.env` (controls the check-in link in supervisor alert emails). Rebuilt the extension dist so the new URL is baked into `extension/dist/background.js`. Created `vercel.json` with `{ "github": { "silent": true } }` to suppress Vercel's automatic PR deployment comments on GitHub.
+> - **Why:** Extension was pointing to a placeholder URL; alert emails were linking to localhost. Both now point to the live deployment.
+> - **Files:**
+>   - `extension/src/background.ts` (`API_URL` updated)
+>   - `.env` (`NEXT_PUBLIC_APP_URL` updated)
+>   - `vercel.json` (new)
+
+---
+
 > ### Browser Extension — TypeScript rewrite, overlay UI, heartbeat polling
 >
 > - **What changed:** Rewrote the entire extension in TypeScript (`extension/src/`). Deleted the old JS placeholders. Set up esbuild to compile all three entry points (`background.ts`, `content.ts`, `popup.ts`) to `extension/dist/` in one command — `build:extension` and `watch:extension` scripts added to root `package.json`. Added `extension/tsconfig.json` (ES2020, DOM lib, strict, no-emit). Added `@types/chrome` and `esbuild` as dev dependencies. Updated `manifest.json` to Manifest V3 with dist paths, `notifications` permission, and an `action` popup. Added `extension/dist/` to `.gitignore`. Shared types live in `extension/src/types.ts` (`ExtensionSettings`, `EventPayload`, `ApiResponse`, `OverlayMessage`, `ResponseMessage`, `SettingsUpdatedMessage`, `ExtensionMessage`). `background.ts`: creates a `monitor` alarm (every 10 seconds), reads `userEmail`/`supervisorEmail` from `chrome.storage.local` on each tick, skips if settings missing or `pausedUntil` is in the future, queries all open tabs, posts `EventPayload` to `/api/events`, sends `SHOW_OVERLAY` to the active tab if the response has `intervene: true`. Handles `RESPONDED` — `back_on_task` sends a confirmation event; `break` sets `pausedUntil: now + 15 min` and sends a break event. `content.ts`: listens for `SHOW_OVERLAY`, injects a full-screen dark overlay with the AI-generated message and two buttons. Escape key is blocked while overlay is present. After 2 minutes with no response: plays a Web Audio API beep (no external file), adds a pulsing red border via injected keyframe CSS, and updates the heading to "Still there? Your supervisor has been notified." `popup.ts`: pre-fills saved emails on load, validates both fields with a regex before saving, writes to `chrome.storage.local`, sends `SETTINGS_UPDATED` to background, shows green Active / red Not configured status. `popup.html`: 280px fixed-width, two labeled email inputs, inline error spans, save button, status line — no external libraries.

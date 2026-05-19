@@ -7,7 +7,7 @@ import type {
   ResponseMessage,
 } from './types';
 
-const API_URL = 'https://adhd-agent.vercel.app';
+const API_URL = 'https://adhd-agent-system.vercel.app';
 
 async function getSettings(): Promise<ExtensionSettings | null> {
   const result = await chrome.storage.local.get([
