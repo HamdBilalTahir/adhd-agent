@@ -47,6 +47,16 @@
 
 ---
 
+> ### README and Architecture.md — full rewrite for ADHD Agent
+>
+> - **What changed:** Replaced the generic Next.js boilerplate content in both files with project-specific documentation. `README.md` now covers what the app does, the full monitoring flow (extension → API → Gemini → overlay → supervisor email), tech stack table, prerequisites, setup steps, all extension commands (`build:extension`, `watch:extension`, `package:extension`), scripts reference, environment variables, and deployment instructions for both Vercel and the Chrome Web Store. `Architecture.md` is a complete rewrite with 14 sections: system overview, high-level architecture diagram showing the full data flow from extension alarm through Firestore to Resend, tech stack, project structure (actual file tree), browser extension internals and message flow, all three API routes with request/response shapes, drift detection level table (0–5), intervention pipeline (`createIntervention` → Gemini → Firestore → `triggerAlert`), supervisor alert dedup logic, Firebase Auth setup, full Firestore schema with key type definitions, environment variable reference table, build toolchain, and deployment.
+> - **Why:** Both files still described a generic Next.js boilerplate — useless to anyone onboarding to or contributing to this project.
+> - **Files:**
+>   - `README.md`
+>   - `Architecture.md`
+
+---
+
 > ### ESLint — extension source files covered, chrome global, inline suppression
 >
 > - **What changed:** Added a dedicated ESLint flat-config block for `extension/src/**/*.ts`. Imports `globals.browser` (provides `console`, `fetch`, `setTimeout`, etc.) and adds `chrome: "readonly"` on top — eliminating the "File ignored because no matching configuration was supplied" warning and the `no-undef` errors that came from the service-worker globals. Added `extension/dist/` to the top-level `ignores` so compiled output is never linted. Added an inline `// eslint-disable-next-line @typescript-eslint/no-unused-vars` in `content.ts` above `showOverlay` to suppress the `_level` unused-parameter error at the call site rather than relaxing the rule project-wide.

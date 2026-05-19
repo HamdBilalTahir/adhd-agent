@@ -1,610 +1,444 @@
-# NextJS Boilerplate — Comprehensive System Architecture
-
-> **Purpose**: Deep-dive architecture document based on full codebase analysis. Use this as the blueprint for understanding the boilerplate or extending it into a full application.
+# ADHD Agent — System Architecture
 
 ---
 
 ## Table of Contents
 
 1. [System Overview](#1-system-overview)
-2. [Technology Stack](#2-technology-stack)
-3. [High-Level Architecture Diagram](#3-high-level-architecture-diagram)
+2. [High-Level Architecture](#2-high-level-architecture)
+3. [Technology Stack](#3-technology-stack)
 4. [Project Structure](#4-project-structure)
-5. [Rendering & Routing Architecture](#5-rendering--routing-architecture)
-6. [Styling System](#6-styling-system)
-7. [TypeScript Configuration](#7-typescript-configuration)
-8. [Testing Architecture](#8-testing-architecture)
-9. [Code Quality & Pre-commit Pipeline](#9-code-quality--pre-commit-pipeline)
-10. [Build & Toolchain](#10-build--toolchain)
-11. [State Management](#11-state-management)
-12. [API Layer](#12-api-layer)
-13. [Authentication & Authorization](#13-authentication--authorization)
-14. [Database & Data Models](#14-database--data-models)
-15. [Environment Configuration](#15-environment-configuration)
-16. [CI/CD](#16-cicd)
-17. [Developer Workflow](#17-developer-workflow)
+5. [Browser Extension](#5-browser-extension)
+6. [API Routes](#6-api-routes)
+7. [Drift Detection](#7-drift-detection)
+8. [Intervention Pipeline](#8-intervention-pipeline)
+9. [Supervisor Alerts](#9-supervisor-alerts)
+10. [Authentication](#10-authentication)
+11. [Firestore Schema](#11-firestore-schema)
+12. [Environment Variables](#12-environment-variables)
+13. [Build & Toolchain](#13-build--toolchain)
+14. [Deployment](#14-deployment)
 
 ---
 
 ## 1. System Overview
 
-This is a **minimal, production-ready Next.js boilerplate** pre-configured with modern tooling so teams can skip setup and go straight to building features.
+ADHD Agent is a real-time focus monitoring system. A Chrome extension watches the user's tab activity every 10 seconds and sends heartbeats to a Next.js API on Vercel. The server detects drift based on tab count and intervention history, calls Gemini to generate a context-aware message, and sends it back to the extension as an overlay. At high escalation levels, the user's supervisor is notified by email.
 
-### What's Included Out of the Box
+### Roles
 
-| Area | Status | Details |
-|------|--------|---------|
-| Framework | ✅ Ready | Next.js 16 with App Router + React 19 |
-| Language | ✅ Ready | TypeScript (strict mode) |
-| Styling | ✅ Ready | Tailwind CSS v4 + dark mode |
-| Linting | ✅ Ready | ESLint 9 with Next.js + TypeScript rules |
-| Formatting | ✅ Ready | Prettier with opinionated defaults |
-| Testing | ✅ Ready | Jest 30 + React Testing Library |
-| Git Hooks | ✅ Ready | Husky + lint-staged pre-commit pipeline |
-| React Compiler | ✅ Ready | Babel React Compiler (auto-memoization) |
-| Fonts | ✅ Ready | Geist Sans + Geist Mono via next/font |
-| State Management | TBD | — |
-| API Routes | TBD | — |
-| Authentication | TBD | — |
-| Database | TBD | — |
-| CI/CD | TBD | — |
-
-### Core Architectural Characteristics
-
-| Property | Value |
-|----------|-------|
-| Rendering | Next.js App Router (RSC-first) |
-| Package Manager | Yarn |
-| Language | TypeScript (strict) |
-| CSS Engine | Tailwind CSS v4 via PostCSS |
-| Testing | Jest 30 + jsdom + Testing Library |
-| Compiler | Babel + React Compiler (auto-memoization) |
-| Path Alias | `@/*` → `./src/*` |
-| Deployment Target | Vercel (default), any Node.js host |
+| Role           | Description                                                                 |
+| -------------- | --------------------------------------------------------------------------- |
+| **Supervisee** | The person being monitored. Installs the extension, configures their email. |
+| **Supervisor** | Receives email alerts when the supervisee is persistently off task.         |
 
 ---
 
-## 2. Technology Stack
+## 2. High-Level Architecture
 
-### Framework & Runtime
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Framework | Next.js (App Router) | 16.1.6 |
-| UI Library | React | 19.2.3 |
-| Language | TypeScript | ^5 |
-| Runtime | Node.js | ≥20 |
-
-### Styling
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| CSS Framework | Tailwind CSS | ^4 |
-| PostCSS Plugin | @tailwindcss/postcss | ^4 |
-| Fonts | Geist Sans + Geist Mono | via next/font/google |
-
-### Testing
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Test Runner | Jest | ^30.3.0 |
-| DOM Environment | jest-environment-jsdom | ^30.3.0 |
-| Component Testing | @testing-library/react | ^16.3.2 |
-| DOM Assertions | @testing-library/jest-dom | ^6.9.1 |
-| TS Transform | ts-jest | ^29.4.6 |
-
-### Code Quality
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Linter | ESLint | ^9 |
-| Next.js Rules | eslint-config-next | 16.1.6 |
-| Formatter | Prettier | ^3.8.1 |
-| Prettier ESLint Bridge | eslint-plugin-prettier | ^5.5.5 |
-| Git Hooks | Husky | ^9.1.7 |
-| Staged File Runner | lint-staged | ^16.3.3 |
-
-### Compiler
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| React Compiler | babel-plugin-react-compiler | 1.0.0 |
-
-### State Management
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| TBD | — | — |
-
-### Database / ORM
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| TBD | — | — |
-
-### Authentication
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| TBD | — | — |
+```
+┌─────────────────────────────────────────────┐
+│           Chrome Extension                   │
+│                                              │
+│  background.ts — alarm every 10s            │
+│    → queries all open tabs                  │
+│    → POST /api/events                       │
+│                                              │
+│  content.ts — listens for SHOW_OVERLAY      │
+│    → injects full-screen overlay            │
+│    → user responds or 2-min escalation      │
+│                                              │
+│  popup.ts — settings UI                     │
+│    → stores userEmail + supervisorEmail     │
+└──────────────────┬──────────────────────────┘
+                   │ POST /api/events
+                   │ (EventPayload)
+┌──────────────────▼──────────────────────────┐
+│         Next.js API (Vercel)                 │
+│                                              │
+│  /api/events                                │
+│    → writes tab_switch event to Firestore   │
+│    → updates status/current doc             │
+│    → fetches last 20 events + last          │
+│      intervention in parallel               │
+│    → runs detectDrift → level 0–5           │
+│    → if level ≥ 2: calls createIntervention │
+│                                              │
+│  /api/intervene                             │
+│    → delegates to createIntervention()      │
+│                                             │
+│  /api/alert                                 │
+│    → 30-min dedup check                    │
+│    → writes supervisor_alerted event        │
+│    → sends email via Resend                 │
+└──────────┬──────────────────┬───────────────┘
+           │                  │
+┌──────────▼──────┐  ┌────────▼────────────────┐
+│   Firestore      │  │   External Services      │
+│                  │  │                          │
+│  /users          │  │  Gemini (LangChain)      │
+│  /users/*/status │  │  → generateIntervention  │
+│  /users/*/events │  │                          │
+│  /users/*/       │  │  Resend                  │
+│    settings      │  │  → sendEmail             │
+│  /interventions  │  │    (alerts@kuailabs.ai)  │
+│  /relationships  │  └──────────────────────────┘
+│  /taskBlocks     │
+└──────────────────┘
+```
 
 ---
 
-## 3. High-Level Architecture Diagram
+## 3. Technology Stack
 
-```
-┌──────────────────────────────────────────────────────┐
-│                    BROWSER                            │
-│  React 19 + Next.js App Router (RSC + Client Comps)  │
-└──────────────────────────┬───────────────────────────┘
-                           │ HTTP
-┌──────────────────────────▼───────────────────────────┐
-│            NEXT.JS SERVER (Vercel Serverless)         │
-│                                                       │
-│  ┌─────────────────┐   ┌────────────────────────┐    │
-│  │  App Router      │   │  API Routes  (TBD)     │    │
-│  │  (RSC pages +   │   │  /app/api/*             │    │
-│  │   layouts)      │   │                         │    │
-│  └────────┬────────┘   └────────────────────────┘    │
-│           │                                           │
-│  ┌────────▼────────────────────────────────────┐     │
-│  │  next/font  │  next/image  │  Metadata API  │     │
-│  └─────────────────────────────────────────────┘     │
-└──────────────────────────────────────────────────────┘
-                           │
-         ┌─────────────────┼──────────────────┐
-         │                 │                  │
-   ┌─────▼──────┐  ┌───────▼──────┐  ┌───────▼──────┐
-   │  DB layer   │  │  Auth layer  │  │  3rd-party   │
-   │   (TBD)     │  │   (TBD)      │  │  APIs (TBD)  │
-   └─────────────┘  └─────────────┘  └──────────────┘
-```
+| Layer             | Technology              | Version                  |
+| ----------------- | ----------------------- | ------------------------ |
+| Framework         | Next.js App Router      | 16.1.6                   |
+| UI                | React                   | 19.2.3                   |
+| Language          | TypeScript              | ^5                       |
+| Auth              | Firebase Authentication | ^12                      |
+| Database          | Firestore (Firebase)    | ^12                      |
+| Admin SDK         | firebase-admin          | ^13                      |
+| AI                | LangChain + Gemini      | `gemini-3.1-pro-preview` |
+| Email             | Resend                  | ^6                       |
+| Extension bundler | esbuild                 | ^0.28                    |
+| Extension types   | @types/chrome           | ^0.1                     |
+| Styling           | Tailwind CSS            | ^4                       |
+| Hosting           | Vercel                  | —                        |
 
 ---
 
 ## 4. Project Structure
 
 ```
-NextJS-Boilerplate-Repo/
-│
+adhd-agent/
 ├── src/
-│   └── app/                         # Next.js App Router root
-│       ├── layout.tsx               # Root layout (HTML shell, fonts, metadata)
-│       ├── page.tsx                 # Home route "/"
-│       ├── page.test.tsx            # Unit test for home page
-│       ├── globals.css              # Tailwind v4 import + CSS variables
-│       └── favicon.ico
+│   ├── app/
+│   │   ├── (auth)/
+│   │   │   ├── login/page.tsx          # Firebase email/password + Google sign-in
+│   │   │   └── signup/page.tsx         # Firebase createUser + Google
+│   │   ├── (dashboard)/
+│   │   │   ├── supervisee/             # Supervisee dashboard pages
+│   │   │   └── supervisor/             # Supervisor dashboard pages
+│   │   ├── api/
+│   │   │   ├── events/route.ts         # Heartbeat endpoint — drift detection entry point
+│   │   │   ├── intervene/route.ts      # Manual intervention trigger
+│   │   │   └── alert/route.ts          # Supervisor email notification
+│   │   └── onboarding/                 # Post-login setup flow
+│   ├── lib/
+│   │   ├── firebase.ts                 # Client SDK (browser)
+│   │   ├── firebase-admin.ts           # Admin SDK + adminAuth (server)
+│   │   ├── auth.ts                     # verifyToken() — Bearer token → uid
+│   │   ├── patterns.ts                 # detectDrift() — level 0–5
+│   │   ├── intervention.ts             # createIntervention() — shared logic
+│   │   ├── claude.ts                   # generateIntervention() — Gemini via LangChain
+│   │   ├── alert.ts                    # triggerAlert() — email/SMS dispatch
+│   │   ├── notify.ts                   # sendEmail() via Resend, sendSMS() stub
+│   │   ├── collections.ts              # Typed Firestore collection helpers
+│   │   └── invite.ts                   # Supervisor invite code logic
+│   ├── components/
+│   │   ├── ui/                         # Primitive UI components
+│   │   ├── dashboard/                  # TaskCard, EventFeed, etc.
+│   │   └── onboarding/                 # Onboarding step components
+│   └── types/
+│       └── index.ts                    # All shared TypeScript types
 │
-├── public/                          # Static assets (served at root URL)
-│   ├── next.svg
-│   ├── vercel.svg
-│   ├── file.svg
-│   ├── globe.svg
-│   └── window.svg
+├── extension/
+│   ├── src/
+│   │   ├── types.ts                    # Extension-specific interfaces
+│   │   ├── background.ts               # Service worker — alarm, fetch, relay
+│   │   ├── content.ts                  # Overlay injection + escalation
+│   │   └── popup.ts                    # Settings UI logic
+│   ├── dist/                           # Compiled JS (gitignored, esbuild output)
+│   ├── icons/                          # Extension icons
+│   ├── manifest.json                   # Chrome MV3 manifest
+│   ├── popup.html                      # Settings popup UI
+│   └── tsconfig.json                   # Extension-specific TS config
 │
-├── .husky/
-│   └── pre-commit                   # Runs typecheck + lint-staged on commit
-│
-├── next.config.ts                   # Next.js config (React Compiler enabled)
-├── tsconfig.json                    # TypeScript config (strict, @/* alias)
-├── postcss.config.mjs               # PostCSS config (Tailwind v4)
-├── eslint.config.mjs                # ESLint flat config (ESLint 9)
-├── .prettierrc                      # Prettier config
-├── .lintstagedrc.json               # lint-staged config
-├── jest.config.ts                   # Jest config (next/jest + jsdom)
-├── jest.setup.ts                    # Jest global setup (@testing-library/jest-dom)
-├── Makefile                         # Developer convenience commands
-├── .env_example                     # Environment variable template (empty)
-├── CHANGE-LOGS.md                   # Changelog
-├── README.md
-└── package.json
-```
-
-### Planned Structure (TBD — fill in as layers are added)
-
-```
-src/
-├── app/                    # Next.js App Router (routes only)
-│   ├── (auth)/             # TBD — Route group: auth pages
-│   ├── (dashboard)/        # TBD — Route group: protected pages
-│   └── api/                # TBD — API routes
-├── components/
-│   ├── ui/                 # TBD — Primitive UI components
-│   └── features/           # TBD — Feature-specific components
-├── lib/
-│   ├── db.ts               # TBD — Database client
-│   ├── auth.ts             # TBD — Auth config
-│   └── utils.ts            # TBD — Shared utilities
-├── hooks/                  # TBD — Custom React hooks
-├── types/                  # TBD — Shared TypeScript types
-└── store/                  # TBD — Client-side state
-```
-
-### Path Alias
-
-```
-@/* → ./src/*
+├── firestore.rules                     # Per-user data isolation + supervisor access
+├── firestore.indexes.json              # Composite indexes
+├── vercel.json                         # Silences GitHub PR comments
+├── .env                                # Local secrets (gitignored)
+└── .env_example                        # Template for new contributors
 ```
 
 ---
 
-## 5. Rendering & Routing Architecture
+## 5. Browser Extension
 
-### App Router Model
+The extension is a Chrome MV3 extension written in TypeScript, compiled to `extension/dist/` via esbuild.
 
-This boilerplate uses the **Next.js App Router** exclusively. Key conventions:
+### Files
 
-| File | Purpose | Status |
-|------|---------|--------|
-| `layout.tsx` | Wraps children — persistent across navigations | ✅ exists at `src/app/layout.tsx` |
-| `page.tsx` | Defines a route — rendered inside the nearest layout | ✅ exists at `src/app/page.tsx` |
-| `loading.tsx` | Suspense boundary loading UI | TBD |
-| `error.tsx` | Error boundary UI | TBD |
-| `not-found.tsx` | 404 UI | TBD |
-| `route.ts` | API endpoint | TBD |
-| `middleware.ts` | Edge middleware (auth guards, redirects) | TBD |
+| File            | Role                                                                                                                                                                                                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `background.ts` | Service worker. Creates a `monitor` alarm (every 10s). On each tick: reads settings from `chrome.storage.local`, queries all open tabs, POSTs `EventPayload` to `/api/events`, sends `SHOW_OVERLAY` to the active tab if `intervene: true`. Handles `RESPONDED` messages — `back_on_task` confirms focus, `break` sets a 15-minute `pausedUntil` pause. |
+| `content.ts`    | Injected into every page. Listens for `SHOW_OVERLAY`, injects a full-screen overlay with the AI message and two buttons. Escape key is blocked while overlay is present. After 2 minutes with no response: plays a Web Audio API beep and escalates visually with a pulsing red border.                                                                 |
+| `popup.ts`      | Settings UI. Reads/writes `userEmail` and `supervisorEmail` from `chrome.storage.local`. Validates both fields, shows green Active / red Not configured status.                                                                                                                                                                                         |
+| `types.ts`      | Shared interfaces: `ExtensionSettings`, `EventPayload`, `ApiResponse`, `OverlayMessage`, `ResponseMessage`, `SettingsUpdatedMessage`, `ExtensionMessage`.                                                                                                                                                                                               |
 
-### Server vs Client Components
+### Message Flow
 
-By default, all components in `app/` are **React Server Components (RSC)**. To opt into client rendering:
-
-```typescript
-'use client'  // Add at top of file
+```
+background.ts ──SHOW_OVERLAY──► content.ts (overlay shown)
+content.ts ────RESPONDED──────► background.ts (dismiss + POST response)
+popup.ts ──────SETTINGS_UPDATED► background.ts (re-reads on next tick)
 ```
 
-**Rule of thumb**:
-- Server Components: data fetching, layouts, static UI, SEO-sensitive content
-- Client Components: interactivity, browser APIs, state, event handlers
+### Build
 
-### Root Layout
-
-[src/app/layout.tsx](src/app/layout.tsx) sets up:
-- `<html lang="en">` shell
-- Geist Sans + Geist Mono fonts via `next/font/google` (zero-layout-shift, self-hosted)
-- CSS variables injected via font `.variable` classes
-- `antialiased` Tailwind class on `<body>`
-- Default metadata (title + description)
+```bash
+yarn build:extension    # compile once
+yarn watch:extension    # compile on every save
+yarn package:extension  # build + zip for store submission
+```
 
 ---
 
-## 6. Styling System
+## 6. API Routes
 
-### Tailwind CSS v4
+### `POST /api/events`
 
-This boilerplate uses **Tailwind CSS v4** — a significant architectural shift from v3:
+Heartbeat from the extension. Writes a `tab_switch` event, updates `status/current`, runs drift detection, and returns an intervention if needed.
 
-| Change | v3 | v4 |
-|--------|----|----|
-| Config file | `tailwind.config.js` | None needed (CSS-first) |
-| PostCSS plugin | `tailwindcss` | `@tailwindcss/postcss` |
-| Import in CSS | `@tailwind base/components/utilities` | `@import 'tailwindcss'` |
-| Theme extension | JS config | `@theme` CSS block |
-
-### CSS Variables & Dark Mode
-
-[src/app/globals.css](src/app/globals.css):
-
-```css
-@import 'tailwindcss';
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-```
-
-Dark mode is handled via `prefers-color-scheme` media query — no class toggling needed by default.
-
-### Font Setup
-
-Fonts are loaded in [src/app/layout.tsx](src/app/layout.tsx) via `next/font/google`:
-```typescript
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
-const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] })
-```
-
-These CSS variables are exposed via `@theme inline` in globals.css, making `font-sans` and `font-mono` Tailwind utilities resolve to the loaded fonts automatically.
-
----
-
-## 7. TypeScript Configuration
-
-[tsconfig.json](tsconfig.json) key settings:
+**Request:**
 
 ```json
 {
-  "compilerOptions": {
-    "target": "ES2017",
-    "strict": true,
-    "moduleResolution": "bundler",
-    "paths": { "@/*": ["./src/*"] }
-  }
+  "userEmail": "string",
+  "supervisorEmail": "string",
+  "tabCount": 14,
+  "activeTabTitle": "string",
+  "activeTabUrl": "string",
+  "timestamp": 1234567890000
 }
 ```
 
-| Setting | Value | Why |
-|---------|-------|-----|
-| `strict` | `true` | Full strict mode: null checks, no implicit any, etc. |
-| `moduleResolution` | `bundler` | Modern resolution for bundlers (Next.js/webpack) |
-| `noEmit` | `true` | TypeScript only for type checking; Next.js handles emit |
-| `target` | `ES2017` | Broad browser compatibility baseline |
-| `isolatedModules` | `true` | Required for transpile-only transforms (SWC, ts-jest) |
-| `incremental` | `true` | Faster subsequent type checks |
+**Response:**
 
----
-
-## 8. Testing Architecture
-
-### Stack
-
-```
-Jest 30 (test runner)
-  └── next/jest (Next.js integration — auto-handles RSC, SWC, env)
-       └── jsdom (browser DOM simulation)
-            └── @testing-library/react (component rendering)
-                 └── @testing-library/jest-dom (custom matchers)
-```
-
-### Configuration
-
-[jest.config.ts](jest.config.ts):
-```typescript
-const createJestConfig = nextJest({ dir: './' })  // Picks up next.config.ts + .env
-
-const config: Config = {
-  coverageProvider: 'v8',
-  testEnvironment: 'jsdom',
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
-  moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
-}
-```
-
-[jest.setup.ts](jest.setup.ts):
-```typescript
-import '@testing-library/jest-dom'  // Extends expect() with .toBeInTheDocument(), etc.
-```
-
-### Writing Tests
-
-Test files are co-located with the files they test (e.g., `page.test.tsx` beside `page.tsx`).
-
-```typescript
-// src/app/page.test.tsx — existing example
-import { render } from '@testing-library/react'
-import Home from './page'
-
-describe('Home', () => {
-  it('renders without crashing', () => {
-    const { container } = render(<Home />)
-    expect(container).toBeInTheDocument()
-  })
-})
-```
-
-Run tests:
-```bash
-yarn test           # Run all tests
-yarn test --watch   # Watch mode
-make test           # Via Makefile
+```json
+{ "intervene": false }
+// or
+{ "intervene": true, "message": "Hey, you've had 18 tabs open...", "level": 3 }
 ```
 
 ---
 
-## 9. Code Quality & Pre-commit Pipeline
+### `POST /api/intervene`
 
-### The Pre-commit Flow
+Manual intervention trigger. Delegates to `createIntervention()`.
 
-Every `git commit` triggers:
+**Request:**
 
-```
-git commit
-     ↓
-.husky/pre-commit runs:
-     ↓
-1. npm run typecheck (tsc --noEmit)
-   → Fails commit if TypeScript errors found
-     ↓
-2. npx lint-staged
-   → On staged *.{js,jsx,ts,tsx}: eslint --fix, prettier --write
-   → On staged *.{json,md,css,scss}: prettier --write
-   → Re-stages fixed files automatically
-     ↓
-Commit created (or aborted on error)
-```
-
-### ESLint Configuration
-
-[eslint.config.mjs](eslint.config.mjs) (ESLint 9 flat config):
-
-| Rule Set | What It Enforces |
-|----------|-----------------|
-| `js.configs.recommended` | Standard JS best practices |
-| `@next/next` recommended | Next.js-specific rules (Image, Link, etc.) |
-| `@next/next` core-web-vitals | Performance-critical rules |
-| `@typescript-eslint/no-unused-vars` | Error on unused variables |
-| `no-unused-vars: off` | Disabled in favor of TS version |
-
-### Prettier Configuration
-
-[.prettierrc](.prettierrc):
 ```json
 {
-  "semi": true,
-  "singleQuote": true,
-  "tabWidth": 2,
-  "trailingComma": "es5"
+  "userId": "string",
+  "driftLevel": 3,
+  "tabCount": 18,
+  "activeTabTitle": "string",
+  "currentTask": "string | null"
 }
 ```
 
 ---
 
-## 10. Build & Toolchain
+### `POST /api/alert`
 
-### React Compiler
+Sends a supervisor email notification. 30-minute dedup via `status.supervisorAlertedAt`.
 
-[next.config.ts](next.config.ts):
+**Request:**
+
+```json
+{
+  "userId": "string",
+  "driftLevel": 4,
+  "currentApp": "string",
+  "minutesOffTask": 25
+}
+```
+
+---
+
+## 7. Drift Detection
+
+`lib/patterns.ts` — `detectDrift(events, lastIntervention?)` returns `{ level: 0–5 }`.
+
+| Level | Condition                                           |
+| ----- | --------------------------------------------------- |
+| 0     | ≤ 10 tabs                                           |
+| 1     | > 10 tabs                                           |
+| 2     | > 15 tabs                                           |
+| 3     | > 20 tabs                                           |
+| 4     | Level 3 + last intervention unanswered for < 20 min |
+| 5     | Level 3 + last intervention unanswered for ≥ 20 min |
+
+---
+
+## 8. Intervention Pipeline
+
+`lib/intervention.ts` — `createIntervention(input)` is the shared logic called by both `/api/events` and `/api/intervene`.
+
+```
+createIntervention()
+  → generateIntervention()       (lib/claude.ts — Gemini via LangChain)
+  → writes to /interventions
+  → updates status/current.interventionMessage
+  → if level ≥ 4: triggerAlert() (lib/alert.ts)
+  → returns { id, message, level }
+```
+
+**Gemini prompt strategy:** Level-aware system prompt (each level 2–5 has distinct escalation tone). User prompt includes tab count, active tab title, drift level, current task, and time of day. Max 100 output tokens — responses must be one tight sentence.
+
+**Intervention levels (Firestore):**
+
+| Drift level | Stored as `InterventionLevel` |
+| ----------- | ----------------------------- |
+| 2           | 1 (gentle)                    |
+| 3 / 4       | 2 (firm)                      |
+| 5           | 3 (urgent)                    |
+
+---
+
+## 9. Supervisor Alerts
+
+`lib/alert.ts` — `triggerAlert()` fires when drift level ≥ 4.
+
+- Saves to `alerts` collection
+- Sends email via Resend from `alerts@kuailabs.ai`
+- 30-minute dedup enforced in `/api/alert` via `status.supervisorAlertedAt`
+- Supervisor email is looked up from the Firestore `relationships` collection (TODO — currently a null placeholder until supervisor accounts are implemented)
+
+---
+
+## 10. Authentication
+
+Firebase Authentication — email/password and Google OAuth.
+
+| File                    | Role                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `lib/firebase.ts`       | Client SDK — `auth` instance used in browser                                                                 |
+| `lib/firebase-admin.ts` | Admin SDK — `adminDb` + `adminAuth` for server routes                                                        |
+| `lib/auth.ts`           | `verifyToken(req)` — reads `Authorization: Bearer <token>`, calls `adminAuth.verifyIdToken()`, returns `uid` |
+
+Login and signup pages are `'use client'` components using `signInWithEmailAndPassword`, `createUserWithEmailAndPassword`, and `signInWithPopup` (Google). Both redirect to `/onboarding` on success.
+
+---
+
+## 11. Firestore Schema
+
+```
+/users/{uid}                          → User
+/users/{uid}/status/current           → UserStatus
+/users/{uid}/events/{eventId}         → UserEvent
+/users/{uid}/settings/preferences     → UserSettings
+/relationships/{inviteCode}           → Relationship
+/interventions/{id}                   → Intervention
+/taskBlocks/{id}                      → TaskBlock
+```
+
+### Key types
+
+**UserStatus**
+
 ```typescript
-const nextConfig: NextConfig = {
-  reactCompiler: true,
+{
+  online: boolean;
+  lastSeen: string;
+  currentApp: string | null;
+  tabCount: number;
+  driftLevel: 'none' | 'low' | 'medium' | 'high';
+  currentTask: string | null;
+  interventionMessage: string | null;
+  supervisorAlerted: boolean;
+  supervisorAlertedAt: string | null;
 }
 ```
 
-The React Compiler (via `babel-plugin-react-compiler`) automatically applies memoization at compile time — no need to manually write `useMemo` / `useCallback` for performance.
+**UserEvent**
 
-### Build Scripts
-
-```bash
-yarn dev       # Start dev server (Next.js fast refresh)
-yarn build     # Production build (next build)
-yarn start     # Start production server (next start)
-yarn lint      # Run ESLint
-yarn test      # Run Jest
-yarn typecheck # TypeScript type check (no emit)
-```
-
-### Makefile Commands
-
-```bash
-make help              # Show all commands
-make lint              # ESLint with --fix
-make format            # Prettier format
-make check             # Lint + format (CI-safe, no --fix)
-make test              # Jest
-make install-hooks     # Install Husky hooks
-make frontend-install  # yarn install
-make frontend-dev      # yarn dev
-make frontend-build    # yarn build
+```typescript
+{
+  type: 'tab_switch' |
+    'app_switch' |
+    'idle' |
+    'active' |
+    'distraction_detected' |
+    'task_started' |
+    'task_completed' |
+    'focus_session_started' |
+    'focus_session_ended' |
+    'supervisor_alerted';
+  source: 'extension' | 'daemon';
+  metadata: Record<string, unknown>;
+  timestamp: string;
+}
 ```
 
 ---
 
-## 11. State Management
+## 12. Environment Variables
 
-> **TBD** — No state management library is currently installed.
->
-> When added, document here:
-> - Library chosen and version
-> - Store structure / atom layout
-> - Where stores live (`src/store/` or `src/lib/store/`)
-> - Which state is global vs local vs server
-
----
-
-## 12. API Layer
-
-> **TBD** — No API routes exist yet (`src/app/api/` does not exist).
->
-> When added, document here:
-> - Route map (method + path + purpose)
-> - Request/response shapes
-> - Validation library used (e.g. Zod)
-> - Error response format
-> - Auth middleware applied to routes
+| Variable                    | Exposed to       | Purpose                    |
+| --------------------------- | ---------------- | -------------------------- |
+| `NEXT_PUBLIC_APP_URL`       | Browser + Server | Base URL for email links   |
+| `NEXT_PUBLIC_FIREBASE_*`    | Browser          | Firebase client SDK config |
+| `FIREBASE_ADMIN_PROJECT_ID` | Server only      | Admin SDK                  |
+| `FIREBASE_CLIENT_EMAIL`     | Server only      | Admin SDK service account  |
+| `FIREBASE_PRIVATE_KEY`      | Server only      | Admin SDK service account  |
+| `RESEND_API_KEY`            | Server only      | Email sending              |
+| `RESEND_FROM_ADDRESS`       | Server only      | Sender address             |
+| `GEMINI_API_KEY`            | Server only      | Gemini API                 |
 
 ---
 
-## 13. Authentication & Authorization
+## 13. Build & Toolchain
 
-> **TBD** — No authentication is configured.
->
-> When added, document here:
-> - Auth library and version
-> - Sign-in methods (email/password, OAuth providers, magic link, etc.)
-> - Session strategy (JWT vs database sessions)
-> - Protected route mechanism (middleware, layout guards)
-> - Role/permission model if applicable
-
----
-
-## 14. Database & Data Models
-
-> **TBD** — No database is configured.
->
-> When added, document here:
-> - Database engine and hosting (e.g. PostgreSQL on Neon)
-> - ORM / query builder and version
-> - Schema file locations
-> - Migration strategy
-> - Key data models / tables with field descriptions
-
----
-
-## 15. Environment Configuration
-
-[.env_example](.env_example) is currently empty.
-
-### Environment Variable Conventions
-
-| Prefix | Exposed To | Use For |
-|--------|-----------|---------|
-| `NEXT_PUBLIC_` | Browser + Server | Non-sensitive config (app URL, feature flags) |
-| _(no prefix)_ | Server only | Secrets, API keys, DB credentials |
-
-**Never prefix secrets with `NEXT_PUBLIC_`** — they will be bundled into client JavaScript.
-
-### Variables (TBD — populate as integrations are added)
+### Next.js app
 
 ```bash
-# App
-NEXT_PUBLIC_APP_URL=    # TBD
-
-# Database
-DATABASE_URL=           # TBD
-
-# Auth
-AUTH_SECRET=            # TBD
-
-# External APIs
-# TBD
+yarn dev          # dev server → localhost:3000
+yarn build        # production build
+yarn typecheck    # tsc --noEmit
+yarn lint         # eslint
+yarn test         # jest
 ```
+
+### Extension
+
+```bash
+yarn build:extension    # esbuild → extension/dist/
+yarn watch:extension    # esbuild --watch
+yarn package:extension  # build + zip → adhd-agent-extension.zip
+```
+
+### Pre-commit hook
+
+Every `git commit` runs:
+
+1. `tsc --noEmit` — TypeScript check
+2. `lint-staged` — ESLint fix + Prettier format on staged files
 
 ---
 
-## 16. CI/CD
+## 14. Deployment
 
-> **TBD** — No CI/CD pipeline is configured (no `vercel.json`, no `.github/workflows/`).
->
-> When added, document here:
-> - CI provider (GitHub Actions, etc.)
-> - Pipeline stages (lint → typecheck → test → build → deploy)
-> - Environment promotion strategy (preview → production)
-> - Secrets management
+### Next.js → Vercel
 
----
+- Production URL: `https://adhd-agent-system.vercel.app`
+- Auto-deploys on push to `main`
+- Set all server-only env vars in Vercel → Settings → Environment Variables
+- `vercel.json` silences automatic GitHub PR comments
 
-## 17. Developer Workflow
+### Extension → Chrome Web Store
 
-### First-time Setup
+1. `yarn package:extension` → generates `adhd-agent-extension.zip`
+2. Upload zip to [Chrome Web Store Developer Console](https://chrome.google.com/webstore/devconsole)
+3. One-time $5 developer fee
+4. Same zip works on the [Microsoft Edge Add-ons store](https://partner.microsoft.com/dashboard) (free)
 
-```bash
-git clone <repo>
-cd NextJS-Boilerplate-Repo
-yarn install            # Install dependencies
-make install-hooks      # Install Husky git hooks (runs once)
-cp .env_example .env.local  # Set up environment
-yarn dev                # Start development server → http://localhost:3000
-```
+### Testing without publishing
 
-### Day-to-day
+Load unpacked in Chrome:
 
-```bash
-yarn dev                # Dev server
-yarn test --watch       # Tests in watch mode (while coding)
-git add <files>
-git commit -m "feat: ..."  # Pre-commit hook auto-runs typecheck + lint + format
-```
-
-### Before Merging
-
-```bash
-yarn typecheck          # Confirm no TS errors
-make check              # ESLint + Prettier (no auto-fix, good for CI)
-yarn test               # Full test suite
-yarn build              # Confirm production build succeeds
-```
+1. `yarn build:extension`
+2. `chrome://extensions` → Developer mode → Load unpacked → select `extension/`
