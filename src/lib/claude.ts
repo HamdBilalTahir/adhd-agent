@@ -1,6 +1,6 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import type { UserSettings } from '@/types';
+type AgentTone = 'gentle' | 'neutral' | 'firm';
 
 const model = new ChatGoogleGenerativeAI({
   model: 'gemini-3.1-pro-preview',
@@ -22,7 +22,7 @@ const levelSystemInstruction: Record<number, string> = {
   5: 'The user has been unreachable for 20+ minutes and their supervisor has been notified. Be urgent and caring.',
 };
 
-const toneGuide: Record<UserSettings['agentTone'], string> = {
+const toneGuide: Record<AgentTone, string> = {
   gentle: 'Warm and encouraging — lead with empathy.',
   neutral: 'Calm and factual — no emotional framing.',
   firm: 'Direct and unambiguous — state what needs to happen.',
@@ -30,8 +30,9 @@ const toneGuide: Record<UserSettings['agentTone'], string> = {
 
 export async function generateIntervention(
   ctx: InterventionContext,
-  settings: UserSettings
+  options: { escalationSensitivity?: string; agentTone?: AgentTone } = {}
 ): Promise<string> {
+  const tone = options.agentTone ?? 'neutral';
   const instruction =
     levelSystemInstruction[ctx.level] ?? levelSystemInstruction[5];
   const hour = new Date().getHours();
@@ -41,7 +42,7 @@ export async function generateIntervention(
     new SystemMessage(
       `You are a warm, direct ADHD support agent. Help the user refocus without shaming them.
 Write exactly 1–2 sentences. Never sound robotic or use filler phrases like "I notice" or "It seems".
-Tone style: ${settings.agentTone} — ${toneGuide[settings.agentTone]}
+Tone style: ${tone} — ${toneGuide[tone]}
 Escalation context: ${instruction}`
     ),
     new HumanMessage(

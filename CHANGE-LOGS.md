@@ -47,6 +47,112 @@
 
 ---
 
+> ### Schema migration — flat collections, extension signup with name fields
+>
+> - **What changed:** Full Firestore schema redesign. All collections are now flat top-level collections with auto-generated doc IDs and `userId` as a foreign key field (Firebase Auth UID). Removed nested subcollections (`users/{uid}/events`, `users/{uid}/status`, `users/{uid}/settings`). Merged `userMonitoring` into `events` (heartbeats are `type: 'heartbeat'` events). Final collections: `userProfiles`, `events`, `interventions`, `alerts`, `sessions`, `activityLogs`, `taskBlocks`, `relationships`. Updated `src/types/index.ts` — replaced `User`/`UserStatus`/`UserSettings` with `UserProfile`, `UserEvent`, `Alert`, `Session`, `ActivityLog`. Updated all files that referenced the old schema: `DashboardShell`, `page.tsx`, `onboarding/supervisor`, `supervisor/page.tsx`, `lib/collections.ts`, `lib/intervention.ts`, `lib/alert.ts`, `lib/claude.ts`, all API routes. Rewrote `firestore.rules` and `firestore.indexes.json` for the new flat structure. Extension popup now collects First Name and Last Name. On "Save & Activate" the popup calls `POST /api/signup` to create accounts for both the supervisee and supervisor, link them via `supervisorId`, and send a welcome email to the supervisee and a "claim your account" email to new supervisors. New `POST /api/signup` route handles the full account-creation flow. `API_URL` moved to `extension/src/types.ts` as a shared constant. Fixed production 400 errors on `POST /api/events` — the deployed API expected `userId` but the extension sends `userEmail`; the route now accepts email-based payloads and auto-creates/links accounts on every heartbeat.
+> - **Why:** The old nested subcollection structure made cross-user queries (e.g. "show all supervisees for this supervisor") require collection group indexes and complex paths. Flat collections with `userId` as a foreign key are simpler to query, index, and reason about. The extension signup flow means anyone can onboard just from the extension without ever touching the web app.
+> - **Files:**
+>   - `src/types/index.ts` (full rewrite)
+>   - `src/app/api/events/route.ts`
+>   - `src/app/api/signup/route.ts` (new)
+>   - `src/app/api/alert/route.ts`
+>   - `src/app/api/settings/route.ts`
+>   - `src/lib/collections.ts`
+>   - `src/lib/intervention.ts`
+>   - `src/lib/alert.ts`
+>   - `src/lib/claude.ts`
+>   - `src/components/dashboard/DashboardShell.tsx`
+>   - `src/components/dashboard/EventFeed.tsx`
+>   - `src/app/page.tsx`
+>   - `src/app/onboarding/supervisor/page.tsx`
+>   - `src/app/(dashboard)/supervisor/page.tsx`
+>   - `src/app/(dashboard)/supervisee/settings/page.tsx`
+>   - `extension/src/types.ts`
+>   - `extension/src/background.ts`
+>   - `extension/src/popup.ts`
+>   - `extension/popup.html`
+>   - `firestore.rules`
+>   - `firestore.indexes.json`
+
+---
+
+> ### Auto-create accounts from extension heartbeat; supervisor claim email
+>
+> - **What changed:** Rewrote `POST /api/events` to accept `{ userEmail, supervisorEmail, ... }` instead of `{ userId, ... }`. On every heartbeat the route calls `getOrCreateUser()` for both emails: if a Firebase Auth account doesn't exist it creates one via `adminAuth.createUser`, writes a `/users/{uid}` Firestore doc with `{ email, roles, supervisorEmail, createdAt, claimed: false }`, and updates `supervisorEmail` on existing accounts if it changed. The supervisee's account creation is the extension form submission — no email sent. If the supervisor's account is new (they were passively referenced), a "claim your account" email is sent via Resend containing a Firebase password-reset link so they can set a password and access the dashboard. Added `supervisorEmail?: string` and `claimed?: boolean` to the `User` type. Updated Firestore index from a collection-group query on `settings` to a simple collection query on `users.supervisorEmail`, matching how the supervisor dashboard queries.
+> - **Why:** Previously the extension had no way to create accounts — it required a pre-existing `userId`. Now anyone can install the extension, fill in their email and their supervisor's email, and both accounts are wired up automatically. The supervisor just receives an email and logs in to find their supervisee already there.
+> - **Files:**
+>   - `src/app/api/events/route.ts`
+>   - `src/types/index.ts` (`supervisorEmail`, `claimed` added to `User`)
+>   - `firestore.indexes.json` (collection-group `settings` index → collection `users` index)
+
+---
+
+> ### Supervisor dashboard — live query from Firestore instead of placeholder data
+>
+> - **What changed:** Replaced the hardcoded placeholder supervisee list with a real Firestore query. The page is now a client component that subscribes to `onAuthStateChanged`, then runs `onSnapshot` on `/users` where `supervisorEmail == currentUser.email`. For each matching doc it fetches the user's `/status/current` subcollection and maps `driftLevel` + `online` to the on-track / drifting / offline badge. Shows skeleton loaders while loading and an empty-state message with instructions when no supervisees exist yet. `timeAgo()` helper formats `lastSeen` as relative time.
+> - **Why:** The page was showing fake data; supervisors need to see real people who have listed them as their supervisor via the extension.
+> - **Files:**
+>   - `src/app/(dashboard)/supervisor/page.tsx`
+
+---
+
+> ### Onboarding — supporter role writes to Firestore and redirects; back buttons
+>
+> - **What changed:** Rewrote the supervisor onboarding page (`/onboarding/supervisor`) as a client component. On mount it waits for `onAuthStateChanged`, then `setDoc`s `{ roles: ['supervisor'] }` (merge) onto the user doc and immediately redirects to `/supervisor` — no invite-code step. Added "← Back" links to both onboarding sub-pages (`/onboarding/supervisee` and `/onboarding/supervisor`) pointing back to `/onboarding`.
+> - **Why:** The supporter onboarding was showing an invite-code form that blocks access to the dashboard; the invite flow is deferred. Users also had no way to go back to the role selection screen.
+> - **Files:**
+>   - `src/app/onboarding/supervisor/page.tsx`
+>   - `src/app/onboarding/supervisee/page.tsx`
+
+---
+
+> ### Fix dark mode browser overrides on login page
+>
+> - **What changed:** Removed the Next.js boilerplate `@media (prefers-color-scheme: dark)` block from `globals.css` that was flipping `--background`/`--foreground` CSS vars — this caused body background to go near-black and all text and form controls to invert in dark-mode browsers. Replaced the whole CSS-var pattern with a single `color-scheme: light` on `body`, which tells the browser to always render native form controls (inputs, buttons, scrollbars) in light mode. Added explicit `bg-white text-gray-900 placeholder-gray-400` to the `Input` component so the input background is always white regardless of browser theme. Firebase env-var fix: removed the dynamic `process.env[key]` validation loop from `firebase.ts` — Turbopack only inlines `NEXT_PUBLIC_*` vars via literal property access, so the loop always evaluated to `undefined` and threw on every page load; the actual `firebaseConfig` object already uses literal accesses so it was always correct. Also removed the manual `.env` parser from `next.config.ts` since Next.js 16 loads `.env` natively (confirmed by the `- Environments: .env` startup log line).
+> - **Why:** The dark-mode CSS-var block was boilerplate left over from `create-next-app` — the app has no dark mode. The dynamic `process.env` loop was the root cause of the "Missing required env var" crash on every cold load.
+> - **Files:**
+>   - `src/app/globals.css`
+>   - `src/components/ui/Input.tsx`
+>   - `src/lib/firebase.ts`
+>   - `next.config.ts`
+
+---
+
+> ### Auth — Firestore session tracking, magic link login, routing persistence
+>
+> - **What changed:** Added three new auth capabilities. (1) **Firestore sessions**: `src/lib/session.ts` — `createSession()` generates a UUID, writes a `/sessions/{id}` doc (`userId`, `email`, `createdAt`, `lastSeenAt`, `active: true`) and stores the ID in a `adhd_session` cookie (7-day max-age). `endSession()` marks the doc `active: false` + `endedAt` timestamp instead of deleting it, then clears the cookie. Login and Google auth both call `createSession()` on success. (2) **Magic link login**: added a passwordless email section at the bottom of the login page — sends `sendSignInLinkToEmail` with `NEXT_PUBLIC_APP_URL/login` as the redirect, stores the email in `localStorage`. On page load, `useEffect` detects `isSignInWithEmailLink`, reads the saved email, calls `signInWithEmailLink`, creates the session, and redirects to `/`. (3) **Auth persistence on all routes**: moved auth gate from `src/middleware.ts` to `src/proxy.ts` using the Next.js 16 `proxy` convention (`export function proxy`). Added `src/app/not-found.tsx` — a client component that redirects all 404s to `/`, which in turn routes to the correct dashboard or login. Fixed Turbopack not loading `.env` by adding explicit `readFileSync('.env')` parsing in `next.config.ts`.
+> - **Why:** Cookie-only sessions had no audit trail; Firestore sessions enable session history and future invalidation. Magic link removes the password requirement for users who prefer it. The proxy rename was required by Next.js 16 (deprecated `middleware` convention); without it auth was bypassed on every route.
+> - **Files:**
+>   - `src/lib/session.ts` (new)
+>   - `src/app/(auth)/login/page.tsx` (magic link section added)
+>   - `src/proxy.ts` (renamed from `src/middleware.ts`; `proxy` export)
+>   - `src/app/not-found.tsx` (new)
+>   - `next.config.ts` (explicit `.env` parsing for Turbopack)
+
+---
+
+> ### Extension packaging fixes — icon removed, fresh zip on every build
+>
+> - **What changed:** Removed `icons` and `default_icon` fields from `extension/manifest.json` — the `icons/` folder doesn't exist yet, which caused Chrome to reject the manifest with "Could not load icon" on Load unpacked. Chrome now shows the default puzzle-piece icon. Updated the `package:extension` script to `rm -f adhd-agent-extension.zip` before zipping so every run produces a guaranteed fresh zip with no stale files carried over.
+> - **Why:** The missing icon blocked the extension from loading entirely. The `rm -f` guard prevents the zip from silently containing outdated files if esbuild output changes.
+> - **Files:**
+>   - `extension/manifest.json` (icon fields removed)
+>   - `package.json` (`package:extension` script updated)
+
+---
+
+> ### Dashboard shell and routing — auth gate, role-aware nav, skeleton
+>
+> - **What changed:** Created the dashboard layout shell that wraps all pages under the `(dashboard)` route group. `src/app/(dashboard)/layout.tsx` is a thin RSC that renders `DashboardShell`. `src/components/dashboard/DashboardShell.tsx` is a `'use client'` component that: runs `onAuthStateChanged` on mount — if no Firebase user, redirects to `/login`; fetches `users/{uid}` from Firestore — if doc missing or no roles, redirects to `/onboarding`; shows a skeleton layout with `animate-pulse` while auth resolves so the screen never flashes empty. Once authenticated, renders a fixed sidebar (collapses behind a hamburger on mobile with a dark backdrop overlay), a topnav with app name, user email, and a Sign out button. Sidebar navigation is role-aware: supervisees get a "Focus" section (Home, Activity, Settings); supervisors get a "Supervise" section (My Supervisees, Alerts, Settings); users with both roles see both sections with a divider between them. Active link is highlighted in blue — home nav items use exact path match, nested items use prefix match to stay highlighted on child routes. Rewrote `src/app/page.tsx` as a client-side redirect: resolves auth + Firestore roles and routes supervisees to `/supervisee`, supervisors to `/supervisor`, and unauthenticated users to `/login`. Updated root layout metadata from the Next.js boilerplate defaults to "ADHD Agent".
+> - **Why:** Without a shell, each dashboard page would need its own auth check, nav, and layout — the shell centralises all of that in one place and ensures no dashboard page is ever reachable unauthenticated.
+> - **Files:**
+>   - `src/components/dashboard/DashboardShell.tsx` (new)
+>   - `src/app/(dashboard)/layout.tsx` (new)
+>   - `src/app/page.tsx` (rewritten — role-based redirect)
+>   - `src/app/layout.tsx` (metadata updated)
+
+---
+
 > ### README and Architecture.md — full rewrite for ADHD Agent
 >
 > - **What changed:** Replaced the generic Next.js boilerplate content in both files with project-specific documentation. `README.md` now covers what the app does, the full monitoring flow (extension → API → Gemini → overlay → supervisor email), tech stack table, prerequisites, setup steps, all extension commands (`build:extension`, `watch:extension`, `package:extension`), scripts reference, environment variables, and deployment instructions for both Vercel and the Chrome Web Store. `Architecture.md` is a complete rewrite with 14 sections: system overview, high-level architecture diagram showing the full data flow from extension alarm through Firestore to Resend, tech stack, project structure (actual file tree), browser extension internals and message flow, all three API routes with request/response shapes, drift detection level table (0–5), intervention pipeline (`createIntervention` → Gemini → Firestore → `triggerAlert`), supervisor alert dedup logic, Firebase Auth setup, full Firestore schema with key type definitions, environment variable reference table, build toolchain, and deployment.

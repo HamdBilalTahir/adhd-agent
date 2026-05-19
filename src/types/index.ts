@@ -1,43 +1,39 @@
-// ── Firestore schema ──────────────────────────────────────────────────────────
-// /users/{uid}                               → User
-// /users/{uid}/status/current               → UserStatus
-// /users/{uid}/events/{eventId}             → UserEvent
-// /users/{uid}/settings/preferences         → UserSettings
-// /relationships/{inviteCode}               → Relationship  (code is doc ID)
-// /interventions/{id}                       → Intervention
-// /taskBlocks/{id}                          → TaskBlock
+// ── Firestore collections (all flat, auto-generated doc IDs) ─────────────────
+// /userProfiles/{docId}          userId (auth UID FK), firstName, lastName, email, roles, supervisorId, superviseeIds
+// /events/{docId}                userId, type, source, metadata, createdAt
+// /interventions/{docId}         userId, level, message, createdAt, respondedAt?, response?
+// /alerts/{docId}                userId, supervisorId, channel, sentAt
+// /sessions/{docId}              userId, email, active, createdAt, lastSeenAt, endedAt?
+// /activityLogs/{docId}          userId?, endpoint?, type, source, payload?, result?, durationMs?, createdAt
+// /taskBlocks/{docId}            userId, task, scheduledStart, scheduledEnd, completed
+// /relationships/{docId}         supervisorId, superviseeId, status, createdAt
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ── /users/{uid} ─────────────────────────────────────────────────────────────
 
 export type UserRole = 'supervisee' | 'supervisor';
 
-export interface User {
-  name: string;
+// ── /userProfiles/{docId} ─────────────────────────────────────────────────────
+
+export interface UserProfile {
+  userId: string;
+  firstName: string;
+  lastName: string;
   email: string;
   roles: UserRole[];
+  supervisorId?: string;
+  superviseeIds?: string[];
   createdAt: string;
+  claimed: boolean;
+  notifyEmail?: boolean;
+  notifySMS?: boolean;
+  supervisorPhone?: string;
 }
 
-// ── /users/{uid}/status/current ───────────────────────────────────────────────
+// ── /events/{docId} ──────────────────────────────────────────────────────────
 
 export type DriftLevel = 'none' | 'low' | 'medium' | 'high';
 
-export interface UserStatus {
-  online: boolean;
-  lastSeen: string;
-  currentApp: string | null;
-  tabCount: number;
-  driftLevel: DriftLevel;
-  currentTask: string | null;
-  interventionMessage: string | null;
-  supervisorAlerted: boolean;
-  supervisorAlertedAt: string | null;
-}
-
-// ── /users/{uid}/events/{eventId} ─────────────────────────────────────────────
-
 export type EventType =
+  | 'heartbeat'
   | 'tab_switch'
   | 'app_switch'
   | 'idle'
@@ -47,48 +43,23 @@ export type EventType =
   | 'task_completed'
   | 'focus_session_started'
   | 'focus_session_ended'
-  | 'supervisor_alerted';
+  | 'supervisor_alerted'
+  | 'intervention_triggered'
+  | 'session_created'
+  | 'session_ended'
+  | 'user_signup';
 
-export type EventSource = 'extension' | 'daemon';
+export type EventSource = 'extension' | 'daemon' | 'web' | 'server';
 
 export interface UserEvent {
+  userId: string;
   type: EventType;
   source: EventSource;
   metadata: Record<string, unknown>;
-  timestamp: string;
-}
-
-// ── /users/{uid}/settings/preferences ────────────────────────────────────────
-
-export type EscalationSensitivity = 'low' | 'medium' | 'high';
-export type AgentTone = 'gentle' | 'neutral' | 'firm';
-
-export interface UserSettings {
-  escalationSensitivity: EscalationSensitivity;
-  agentTone: AgentTone;
-  focusHoursStart: string;
-  focusHoursEnd: string;
-  notifyEmail: boolean;
-  notifySMS: boolean;
-  supervisorEmail?: string;
-  supervisorPhone?: string;
-}
-
-// ── /relationships/{inviteCode} ───────────────────────────────────────────────
-// Document ID is the invite code itself for O(1) lookup on redemption.
-
-export type RelationshipStatus = 'pending' | 'active' | 'revoked';
-
-export interface Relationship {
-  supervisorId: string;
-  superviseeId: string | null; // null until code is redeemed
-  status: RelationshipStatus;
-  inviteCode: string;
-  linkedAt: string | null; // null until active
   createdAt: string;
 }
 
-// ── /interventions/{id} ───────────────────────────────────────────────────────
+// ── /interventions/{docId} ───────────────────────────────────────────────────
 
 export type InterventionLevel = 1 | 2 | 3;
 
@@ -101,7 +72,43 @@ export interface Intervention {
   response?: string;
 }
 
-// ── /taskBlocks/{id} ─────────────────────────────────────────────────────────
+// ── /alerts/{docId} ──────────────────────────────────────────────────────────
+
+export interface Alert {
+  userId: string;
+  supervisorId: string;
+  message: string;
+  level: number;
+  severity: 'medium' | 'high';
+  channel: 'email' | 'sms' | 'both';
+  sentAt: string;
+}
+
+// ── /sessions/{docId} ────────────────────────────────────────────────────────
+
+export interface Session {
+  userId: string;
+  email: string;
+  createdAt: string;
+  lastSeenAt: string;
+  active: boolean;
+  endedAt?: string;
+}
+
+// ── /activityLogs/{docId} ────────────────────────────────────────────────────
+
+export interface ActivityLog {
+  userId?: string;
+  endpoint?: string;
+  type: EventType | string;
+  source: EventSource;
+  payload?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  durationMs?: number;
+  createdAt: string;
+}
+
+// ── /taskBlocks/{docId} ──────────────────────────────────────────────────────
 
 export interface TaskBlock {
   userId: string;
@@ -112,12 +119,22 @@ export interface TaskBlock {
   completedAt?: string;
 }
 
+// ── /relationships/{docId} ───────────────────────────────────────────────────
+
+export type RelationshipStatus = 'pending' | 'active' | 'revoked';
+
+export interface Relationship {
+  supervisorId: string;
+  superviseeId: string | null;
+  status: RelationshipStatus;
+  inviteCode: string;
+  linkedAt: string | null;
+  createdAt: string;
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-/** Adds the Firestore document ID to any stored type when fetched client-side. */
 export type WithId<T> = T & { id: string };
-
-// ── Internal / computed types (not stored directly in Firestore) ───────────────
 
 export type DriftPatternType =
   | 'distraction_streak'

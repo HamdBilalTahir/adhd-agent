@@ -1,9 +1,13 @@
 export interface ExtensionSettings {
+  firstName: string;
+  lastName: string;
   userEmail: string;
   supervisorEmail: string;
   savedAt: number;
   pausedUntil?: number;
 }
+
+export const API_URL = 'https://adhd-agent-system.vercel.app';
 
 export interface EventPayload {
   userEmail: string;

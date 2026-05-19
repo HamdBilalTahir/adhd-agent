@@ -10,6 +10,7 @@ import {
   GoogleAuthProvider,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { createSession } from '@/lib/session';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 
@@ -34,6 +35,7 @@ export default function SignupPage() {
         password
       );
       if (name) await updateProfile(user, { displayName: name });
+      await createSession(user.uid, user.email ?? email);
       router.push('/onboarding');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Sign up failed');
@@ -46,7 +48,8 @@ export default function SignupPage() {
     setError('');
     setLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { user } = await signInWithPopup(auth, googleProvider);
+      await createSession(user.uid, user.email ?? '');
       router.push('/onboarding');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Google sign in failed');

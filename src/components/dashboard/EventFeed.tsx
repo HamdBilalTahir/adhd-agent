@@ -33,7 +33,7 @@ export function EventFeed({ events }: EventFeedProps) {
                 {eventLabels[event.type] ?? event.type}
               </span>
               <span className="tabular-nums text-gray-400">
-                {new Date(event.timestamp).toLocaleTimeString()}
+                {new Date(event.createdAt).toLocaleTimeString()}
               </span>
             </li>
           ))}

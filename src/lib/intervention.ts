@@ -1,7 +1,7 @@
 import { adminDb } from '@/lib/firebase-admin';
 import { generateIntervention } from '@/lib/claude';
 import { triggerAlert } from '@/lib/alert';
-import type { Intervention, InterventionLevel, UserSettings } from '@/types';
+import type { Intervention, InterventionLevel } from '@/types';
 
 export interface InterventionInput {
   userId: string;
@@ -20,14 +20,6 @@ function levelToInterventionLevel(level: number): InterventionLevel {
 export async function createIntervention(
   input: InterventionInput
 ): Promise<{ id: string; message: string; level: InterventionLevel }> {
-  const settingsSnap = await adminDb
-    .doc(`users/${input.userId}/settings/preferences`)
-    .get();
-  if (!settingsSnap.exists) {
-    throw new Error(`Settings not found for user ${input.userId}`);
-  }
-  const settings = settingsSnap.data() as UserSettings;
-
   const message = await generateIntervention(
     {
       level: input.level,
@@ -35,7 +27,7 @@ export async function createIntervention(
       activeTabTitle: input.activeTabTitle,
       currentTask: input.currentTask,
     },
-    settings
+    { escalationSensitivity: 'medium', agentTone: 'neutral' }
   );
 
   const interventionLevel = levelToInterventionLevel(input.level);
@@ -49,17 +41,8 @@ export async function createIntervention(
 
   const ref = await adminDb.collection('interventions').add(intervention);
 
-  await adminDb
-    .doc(`users/${input.userId}/status/current`)
-    .set({ interventionMessage: message }, { merge: true });
-
   if (input.level >= 4) {
-    await triggerAlert({
-      superviseeId: input.userId,
-      message,
-      level: input.level,
-      settings,
-    });
+    await triggerAlert({ userId: input.userId, message, level: input.level });
   }
 
   return { id: ref.id, message, level: interventionLevel };

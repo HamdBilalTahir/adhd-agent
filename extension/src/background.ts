@@ -6,11 +6,12 @@ import type {
   ExtensionMessage,
   ResponseMessage,
 } from './types';
-
-const API_URL = 'https://adhd-agent-system.vercel.app';
+import { API_URL } from './types';
 
 async function getSettings(): Promise<ExtensionSettings | null> {
   const result = await chrome.storage.local.get([
+    'firstName',
+    'lastName',
     'userEmail',
     'supervisorEmail',
     'pausedUntil',
@@ -18,6 +19,8 @@ async function getSettings(): Promise<ExtensionSettings | null> {
   ]);
   if (!result['userEmail'] || !result['supervisorEmail']) return null;
   return {
+    firstName: (result['firstName'] as string) ?? '',
+    lastName: (result['lastName'] as string) ?? '',
     userEmail: result['userEmail'] as string,
     supervisorEmail: result['supervisorEmail'] as string,
     savedAt: result['savedAt'] as number,

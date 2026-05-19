@@ -1,10 +1,8 @@
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import type { AgentTone, EscalationSensitivity } from '@/types';
-
-const tones: AgentTone[] = ['gentle', 'neutral', 'firm'];
-const sensitivities: EscalationSensitivity[] = ['low', 'medium', 'high'];
+const tones = ['gentle', 'neutral', 'firm'] as const;
+const sensitivities = ['low', 'medium', 'high'] as const;
 
 export default function SuperviseeSettingsPage() {
   return (

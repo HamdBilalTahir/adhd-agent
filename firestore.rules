@@ -6,47 +6,65 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return request.auth.uid == userId;
+    function isOwner() {
+      return isAuth() && resource.data.userId == request.auth.uid;
     }
 
-    // Reads the relationships collection to verify the requester is an active
-    // supervisor of the given supervisee. The relationship doc ID is the invite
-    // code, so we query by field instead.
-    // NOTE: this uses get() and will count as an extra read per rule evaluation.
-    function isLinkedSupervisor(superviseeId) {
-      return isAuth() && exists(
-        /databases/$(database)/documents/relationships/$(request.auth.uid + '_' + superviseeId)
+    function isSupervisor() {
+      return isAuth() && resource.data.supervisorId == request.auth.uid;
+    }
+
+    // ── /userProfiles/{docId} ─────────────────────────────────────────────────
+    match /userProfiles/{docId} {
+      allow read:  if isAuth() && (isOwner() || isSupervisor());
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuth() && isOwner();
+      allow delete: if false;
+    }
+
+    // ── /events/{docId} ───────────────────────────────────────────────────────
+    match /events/{docId} {
+      allow read:   if isAuth() && (isOwner() || isSupervisor());
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ── /interventions/{docId} ────────────────────────────────────────────────
+    match /interventions/{docId} {
+      allow read:   if isAuth() && (isOwner() || isSupervisor());
+      allow update: if isAuth() && isOwner();
+      allow create, delete: if false;
+    }
+
+    // ── /alerts/{docId} ───────────────────────────────────────────────────────
+    match /alerts/{docId} {
+      allow read: if isAuth() && (isOwner() || isSupervisor());
+      allow create, update, delete: if false;
+    }
+
+    // ── /sessions/{docId} ────────────────────────────────────────────────────
+    match /sessions/{docId} {
+      allow read, write: if isAuth() && isOwner();
+    }
+
+    // ── /activityLogs/{docId} ────────────────────────────────────────────────
+    match /activityLogs/{docId} {
+      allow read: if isAuth() && isOwner();
+      allow create, update, delete: if false;
+    }
+
+    // ── /taskBlocks/{docId} ──────────────────────────────────────────────────
+    match /taskBlocks/{docId} {
+      allow read, create, update: if isAuth() && (
+        resource == null
+          ? request.resource.data.userId == request.auth.uid
+          : isOwner()
       );
+      allow delete: if isAuth() && isOwner();
     }
 
-    // ── /users/{uid} ──────────────────────────────────────────────────────────
-    match /users/{userId} {
-      allow read, write: if isAuth() && isOwner(userId);
-
-      // Real-time status — linked supervisors may read
-      match /status/{docId} {
-        allow read: if isAuth() && (isOwner(userId) || isLinkedSupervisor(userId));
-        allow write: if isAuth() && isOwner(userId);
-      }
-
-      // Append-only event log — linked supervisors may read, no deletes or updates
-      match /events/{eventId} {
-        allow read:   if isAuth() && (isOwner(userId) || isLinkedSupervisor(userId));
-        allow create: if isAuth() && isOwner(userId);
-        allow update, delete: if false;
-      }
-
-      // Settings — owner only
-      match /settings/{docId} {
-        allow read, write: if isAuth() && isOwner(userId);
-      }
-    }
-
-    // ── /relationships/{inviteCode} ───────────────────────────────────────────
-    // Either party (supervisor or supervisee) may read their own relationship.
-    // Only the supervisor may create. Either party may update (accept / revoke).
-    match /relationships/{inviteCode} {
+    // ── /relationships/{docId} ───────────────────────────────────────────────
+    match /relationships/{docId} {
       allow read: if isAuth() && (
         resource.data.supervisorId == request.auth.uid ||
         resource.data.superviseeId == request.auth.uid
@@ -57,25 +75,6 @@ service cloud.firestore {
         resource.data.superviseeId == request.auth.uid
       );
       allow delete: if false;
-    }
-
-    // ── /interventions/{id} ───────────────────────────────────────────────────
-    // User may read their own and acknowledge (update respondedAt / response).
-    // Linked supervisor may read. Creation and deletion are server-only (Admin SDK).
-    match /interventions/{interventionId} {
-      allow read: if isAuth() && (
-        resource.data.userId == request.auth.uid ||
-        isLinkedSupervisor(resource.data.userId)
-      );
-      allow update: if isAuth() && resource.data.userId == request.auth.uid;
-      allow create, delete: if false;
-    }
-
-    // ── /taskBlocks/{id} ─────────────────────────────────────────────────────
-    match /taskBlocks/{taskId} {
-      allow read:          if isAuth() && resource.data.userId == request.auth.uid;
-      allow create:        if isAuth() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuth() && resource.data.userId == request.auth.uid;
     }
 
     // ── Deny everything else ──────────────────────────────────────────────────
