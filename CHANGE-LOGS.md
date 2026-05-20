@@ -2,6 +2,33 @@
 
 ---
 
+### 🐛 Fixes
+
+---
+
+> ### Update deprecated Gemini model
+>
+> - **What changed:** Updated model in `src/lib/gemini.ts` from `gemini-2.0-flash` to `gemini-3.1-pro-preview`. The old model is no longer available to new users and was returning 404 from the Google AI API, causing every intervention to fail silently.
+> - **Why:** Google deprecated `gemini-2.0-flash` for new API keys, breaking the intervention pipeline entirely.
+> - **Files:**
+>   - `src/lib/gemini.ts` (model string updated)
+
+---
+
+### ♻️ Refactors
+
+---
+
+> ### Rename `claude.ts` → `gemini.ts`
+>
+> - **What changed:** Renamed `src/lib/claude.ts` to `src/lib/gemini.ts` to accurately reflect that the file uses the Google Gemini API, not Anthropic's Claude. Updated the import in `src/lib/intervention.ts` accordingly.
+> - **Why:** The filename was misleading — the file imports `@langchain/google-genai` and calls Gemini, not Claude.
+> - **Files:**
+>   - `src/lib/gemini.ts` (renamed from `src/lib/claude.ts`)
+>   - `src/lib/intervention.ts` (import path updated)
+
+---
+
 ### ✨ Features
 
 ---

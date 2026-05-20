@@ -1,5 +1,5 @@
 import { adminDb } from '@/lib/firebase-admin';
-import { generateIntervention } from '@/lib/claude';
+import { generateIntervention } from '@/lib/gemini';
 import { triggerAlert } from '@/lib/alert';
 import type { Intervention, InterventionLevel } from '@/types';
 

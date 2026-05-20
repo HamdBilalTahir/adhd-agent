@@ -4,7 +4,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 type AgentTone = 'gentle' | 'neutral' | 'firm';
 
 const model = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.0-flash',
+  model: 'gemini-3.1-pro-preview',
   apiKey: process.env.GEMINI_API_KEY,
   maxOutputTokens: 100,
 });
