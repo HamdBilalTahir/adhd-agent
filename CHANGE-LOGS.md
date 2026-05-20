@@ -6,6 +6,15 @@
 
 ---
 
+> ### Fix structured output parse failure — switch to `json_mode`
+>
+> - **What changed:** Added `{ method: 'json_mode' }` to `model.withStructuredOutput()` in `src/lib/gemini.ts`. This sets `response_mime_type: "application/json"` on the Gemini request, forcing the model to return raw JSON with no prose preamble.
+> - **Why:** The default `functionCalling` method caused the model to return "Here is the JSON..." as a preamble before the JSON object, which the LangChain output parser couldn't handle and threw `OUTPUT_PARSING_FAILURE` on every intervention.
+> - **Files:**
+>   - `src/lib/gemini.ts` (`json_mode` added to `withStructuredOutput`)
+
+---
+
 > ### Update deprecated Gemini model
 >
 > - **What changed:** Updated model in `src/lib/gemini.ts` from `gemini-2.0-flash` to `gemini-3.1-pro-preview`. The old model is no longer available to new users and was returning 404 from the Google AI API, causing every intervention to fail silently.

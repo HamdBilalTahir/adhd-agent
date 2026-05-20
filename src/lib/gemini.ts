@@ -46,7 +46,9 @@ export async function generateIntervention(
   const hour = new Date().getHours();
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
 
-  const structured = model.withStructuredOutput(interventionSchema);
+  const structured = model.withStructuredOutput(interventionSchema, {
+    method: 'json_mode',
+  });
 
   const result = await structured.invoke([
     new SystemMessage(
