@@ -15,6 +15,16 @@
 
 ---
 
+> ### Fix `Cannot read properties of undefined (reading 'text')` crash — Zod structured output
+>
+> - **What changed:** Replaced manual `response.content` parsing in `generateIntervention` with `model.withStructuredOutput(interventionSchema)` backed by a Zod schema (`{ message: z.string() }`). LangChain now handles all response parsing internally and returns a typed object — the function reads `result.message` directly. Installed `zod` as a dependency.
+> - **Why:** The manual content extraction (`response.content[0].text`) crashed when Gemini returned an unexpected response shape. Structured output eliminates the parsing entirely and gives a guaranteed type-safe result.
+> - **Files:**
+>   - `src/lib/gemini.ts` (`withStructuredOutput` + Zod schema, removed manual content parsing)
+>   - `package.json` (`zod` added)
+
+---
+
 ### ♻️ Refactors
 
 ---

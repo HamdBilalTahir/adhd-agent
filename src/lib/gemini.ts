@@ -1,12 +1,19 @@
 /* global process */
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { z } from 'zod';
 type AgentTone = 'gentle' | 'neutral' | 'firm';
 
 const model = new ChatGoogleGenerativeAI({
   model: 'gemini-3.1-pro-preview',
   apiKey: process.env.GEMINI_API_KEY,
   maxOutputTokens: 100,
+});
+
+const interventionSchema = z.object({
+  message: z
+    .string()
+    .describe('The 1–2 sentence intervention message for the user'),
 });
 
 export interface InterventionContext {
@@ -39,7 +46,9 @@ export async function generateIntervention(
   const hour = new Date().getHours();
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
 
-  const response = await model.invoke([
+  const structured = model.withStructuredOutput(interventionSchema);
+
+  const result = await structured.invoke([
     new SystemMessage(
       `You are a warm, direct ADHD support agent. Help the user refocus without shaming them.
 Write exactly 1–2 sentences. Never sound robotic or use filler phrases like "I notice" or "It seems".
@@ -57,16 +66,8 @@ Write the intervention message.`
     ),
   ]);
 
-  let text: string | undefined;
-  if (typeof response.content === 'string') {
-    text = response.content;
-  } else if (Array.isArray(response.content) && response.content.length > 0) {
-    const first = response.content[0] as { text?: string } | string;
-    text = typeof first === 'string' ? first : first?.text;
-  }
-
   return (
-    text?.trim() ||
+    result.message.trim() ||
     "You've got a lot of tabs open — what's the one thing you should be focusing on right now?"
   );
 }
