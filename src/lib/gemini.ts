@@ -71,7 +71,9 @@ Time of day: ${timeOfDay}
 Write the intervention message.`
       ),
     ]);
-    return result.message.trim() || FALLBACK_MESSAGE;
+    const message = result.message.trim() || FALLBACK_MESSAGE;
+    console.log(`[gemini] output="${message}"`);
+    return message;
   } catch (err) {
     console.error('[gemini] structured output failed, using fallback:', err);
     return FALLBACK_MESSAGE;

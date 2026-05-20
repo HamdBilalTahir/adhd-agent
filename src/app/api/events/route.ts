@@ -178,6 +178,9 @@ export async function POST(req: NextRequest) {
         : (lastInterventionSnap.docs[0].data() as Intervention);
 
       level = detectDrift(recentEvents, lastIntervention).level;
+      console.log(
+        `[api/events] uid=${uid} tabCount=${body.tabCount} driftLevel=${level} activeTab="${body.activeTabTitle}"`
+      );
     } catch (err) {
       console.warn(
         '[api/events] drift detection failed, skipping intervention:',
@@ -207,6 +210,9 @@ export async function POST(req: NextRequest) {
       );
 
     if (level < 2) {
+      console.log(
+        `[api/events] uid=${uid} no intervention needed (level=${level})`
+      );
       return NextResponse.json({ intervene: false });
     }
 
@@ -219,6 +225,9 @@ export async function POST(req: NextRequest) {
         activeTabTitle: body.activeTabTitle ?? '',
         currentTask: null,
       });
+      console.log(
+        `[api/events] intervention sent uid=${uid} level=${interventionLevel} message="${message}"`
+      );
       return NextResponse.json({
         intervene: true,
         message,

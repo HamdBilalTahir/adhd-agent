@@ -6,6 +6,16 @@
 
 ---
 
+> ### Add success logs to API events and Gemini for Vercel observability
+>
+> - **What changed:** Added `console.log` at every meaningful outcome in the `/api/events` request lifecycle: after drift detection (uid, tabCount, driftLevel, activeTab), when no intervention is needed (level < 2), when an intervention is successfully sent (uid, level, message), and inside `generateIntervention` after a successful Gemini response (raw output string).
+> - **Why:** Vercel logs only showed warnings and errors — 200 responses were completely opaque. Now every heartbeat produces a log line so drift levels, intervention triggers, and LLM output are all searchable and visible in live logs.
+> - **Files:**
+>   - `src/app/api/events/route.ts` (drift level log, no-intervention log, intervention-sent log)
+>   - `src/lib/gemini.ts` (LLM output log)
+
+---
+
 > ### Fix empty Gemini response — raise token limit, fallback on parse error
 >
 > - **What changed:** Increased `maxOutputTokens` from `100` to `10000` in `src/lib/gemini.ts`. Wrapped `structured.invoke()` in a try/catch — parse errors now return a hardcoded fallback message instead of throwing. Extracted the fallback string into a `FALLBACK_MESSAGE` constant shared by both the empty-result and error paths.
