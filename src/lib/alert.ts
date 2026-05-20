@@ -8,7 +8,22 @@ interface AlertOptions {
   level: number;
 }
 
-export async function triggerAlert({ userId, message, level }: AlertOptions): Promise<void> {
+const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+
+export async function triggerAlert({
+  userId,
+  message,
+  level,
+}: AlertOptions): Promise<void> {
+  const oneHourAgo = new Date(Date.now() - ALERT_COOLDOWN_MS).toISOString();
+  const recentSnap = await adminDb
+    .collection('alerts')
+    .where('userId', '==', userId)
+    .where('sentAt', '>=', oneHourAgo)
+    .limit(1)
+    .get();
+  if (!recentSnap.empty) return;
+
   // Look up supervisee profile to find supervisor
   const profileSnap = await adminDb
     .collection('userProfiles')

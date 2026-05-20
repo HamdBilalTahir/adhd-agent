@@ -6,6 +6,15 @@
 
 ---
 
+> ### Rate-limit supervisor email alerts to once per hour
+>
+> - **What changed:** Added a 1-hour cooldown check at the top of `triggerAlert` in `src/lib/alert.ts`. Before sending any email or SMS, it queries the `alerts` collection for a record with the same `userId` and a `sentAt` timestamp within the last 60 minutes — if one exists the function returns early without sending.
+> - **Why:** The extension heartbeats every ~10 seconds and drift level >= 4 triggered `triggerAlert` on every tick, flooding the supervisor's inbox. The cooldown ensures at most one alert per user per hour regardless of how frequently the heartbeat fires.
+> - **Files:**
+>   - `src/lib/alert.ts` (`ALERT_COOLDOWN_MS` constant, early-return guard added)
+
+---
+
 > ### Add success logs to API events and Gemini for Vercel observability
 >
 > - **What changed:** Added `console.log` at every meaningful outcome in the `/api/events` request lifecycle: after drift detection (uid, tabCount, driftLevel, activeTab), when no intervention is needed (level < 2), when an intervention is successfully sent (uid, level, message), and inside `generateIntervention` after a successful Gemini response (raw output string).
