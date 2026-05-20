@@ -4,10 +4,13 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 type AgentTone = 'gentle' | 'neutral' | 'firm';
 
+const FALLBACK_MESSAGE =
+  "You've got a lot of tabs open — what's the one thing you should be focusing on right now?";
+
 const model = new ChatGoogleGenerativeAI({
   model: 'gemini-3.1-pro-preview',
   apiKey: process.env.GEMINI_API_KEY,
-  maxOutputTokens: 100,
+  maxOutputTokens: 10000,
 });
 
 const interventionSchema = z.object({
@@ -50,26 +53,27 @@ export async function generateIntervention(
     method: 'json_mode',
   });
 
-  const result = await structured.invoke([
-    new SystemMessage(
-      `You are a warm, direct ADHD support agent. Help the user refocus without shaming them.
+  try {
+    const result = await structured.invoke([
+      new SystemMessage(
+        `You are a warm, direct ADHD support agent. Help the user refocus without shaming them.
 Write exactly 1–2 sentences. Never sound robotic or use filler phrases like "I notice" or "It seems".
 Tone style: ${tone} — ${toneGuide[tone]}
 Escalation context: ${instruction}`
-    ),
-    new HumanMessage(
-      `Tab count: ${ctx.tabCount}
+      ),
+      new HumanMessage(
+        `Tab count: ${ctx.tabCount}
 Active tab: "${ctx.activeTabTitle}"
 Drift level: ${ctx.level}/5
 Current task: ${ctx.currentTask ?? 'none set'}
 Time of day: ${timeOfDay}
 
 Write the intervention message.`
-    ),
-  ]);
-
-  return (
-    result.message.trim() ||
-    "You've got a lot of tabs open — what's the one thing you should be focusing on right now?"
-  );
+      ),
+    ]);
+    return result.message.trim() || FALLBACK_MESSAGE;
+  } catch (err) {
+    console.error('[gemini] structured output failed, using fallback:', err);
+    return FALLBACK_MESSAGE;
+  }
 }

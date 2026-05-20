@@ -6,6 +6,15 @@
 
 ---
 
+> ### Fix empty Gemini response — raise token limit, fallback on parse error
+>
+> - **What changed:** Increased `maxOutputTokens` from `100` to `10000` in `src/lib/gemini.ts`. Wrapped `structured.invoke()` in a try/catch — parse errors now return a hardcoded fallback message instead of throwing. Extracted the fallback string into a `FALLBACK_MESSAGE` constant shared by both the empty-result and error paths.
+> - **Why:** `maxOutputTokens: 100` was too low for the JSON wrapper + sentence content, causing the model to return an empty string which failed JSON parsing. The try/catch ensures interventions are always shown even if Gemini misbehaves — the overlay appears with the fallback rather than being skipped entirely.
+> - **Files:**
+>   - `src/lib/gemini.ts` (`maxOutputTokens` raised, `FALLBACK_MESSAGE` constant, try/catch on `structured.invoke`)
+
+---
+
 > ### Fix structured output parse failure — switch to `json_mode`
 >
 > - **What changed:** Added `{ method: 'json_mode' }` to `model.withStructuredOutput()` in `src/lib/gemini.ts`. This sets `response_mime_type: "application/json"` on the Gemini request, forcing the model to return raw JSON with no prose preamble.
