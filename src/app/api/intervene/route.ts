@@ -1,31 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createIntervention } from '@/lib/intervention';
-
-interface InterventionBody {
-  userId: string;
-  driftLevel: number;
-  tabCount: number;
-  activeTabTitle: string;
-  currentTask?: string | null;
-}
+import { intervenePostSchema } from './schema';
 
 export async function POST(req: NextRequest) {
   try {
-    const body: InterventionBody = await req.json();
-
-    if (!body.userId || body.driftLevel === undefined) {
+    const parsed = intervenePostSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      console.error(
+        '[api/intervene] 400 invalid body:',
+        parsed.error.flatten()
+      );
       return NextResponse.json(
-        { error: 'userId and driftLevel are required' },
+        { error: parsed.error.flatten() },
         { status: 400 }
       );
     }
+    const { userId, driftLevel, tabCount, activeTabTitle, currentTask } =
+      parsed.data;
 
     const result = await createIntervention({
-      userId: body.userId,
-      level: body.driftLevel,
-      tabCount: body.tabCount ?? 0,
-      activeTabTitle: body.activeTabTitle ?? '',
-      currentTask: body.currentTask ?? null,
+      userId,
+      level: driftLevel,
+      tabCount: tabCount ?? 0,
+      activeTabTitle: activeTabTitle ?? '',
+      currentTask: currentTask ?? null,
     });
 
     return NextResponse.json({ intervene: true, ...result }, { status: 201 });

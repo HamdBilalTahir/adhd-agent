@@ -1,15 +1,12 @@
+/* global process */
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { sendEmail } from '@/lib/notify';
+import { signupPostSchema } from './schema';
 
-interface PostBody {
-  firstName: string;
-  lastName: string;
-  email: string;
-  supervisorEmail: string;
-}
-
-async function getOrCreateAuthUser(email: string): Promise<{ uid: string; isNew: boolean }> {
+async function getOrCreateAuthUser(
+  email: string
+): Promise<{ uid: string; isNew: boolean }> {
   try {
     const user = await adminAuth.getUserByEmail(email);
     return { uid: user.uid, isNew: false };
@@ -46,21 +43,23 @@ async function getOrCreateProfile(
 
 export async function POST(req: NextRequest) {
   try {
-    const body: PostBody = await req.json();
-    const { firstName, lastName, email, supervisorEmail } = body;
-
-    if (!firstName || !lastName || !email || !supervisorEmail) {
+    const parsed = signupPostSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      console.error('[api/signup] 400 invalid body:', parsed.error.flatten());
       return NextResponse.json(
-        { error: 'firstName, lastName, email, and supervisorEmail are required' },
+        { error: parsed.error.flatten() },
         { status: 400 }
       );
     }
+    const { firstName, lastName, email, supervisorEmail } = parsed.data;
 
-    const [{ uid: superviseeUid }, { uid: supervisorUid, isNew: supervisorIsNew }] =
-      await Promise.all([
-        getOrCreateAuthUser(email),
-        getOrCreateAuthUser(supervisorEmail),
-      ]);
+    const [
+      { uid: superviseeUid },
+      { uid: supervisorUid, isNew: supervisorIsNew },
+    ] = await Promise.all([
+      getOrCreateAuthUser(email),
+      getOrCreateAuthUser(supervisorEmail),
+    ]);
 
     // Create both profiles
     await Promise.all([
@@ -89,7 +88,8 @@ export async function POST(req: NextRequest) {
       .get();
 
     if (!supervisorSnap.empty) {
-      const existing = (supervisorSnap.docs[0].data().superviseeIds ?? []) as string[];
+      const existing = (supervisorSnap.docs[0].data().superviseeIds ??
+        []) as string[];
       if (!existing.includes(superviseeUid)) {
         await supervisorSnap.docs[0].ref.set(
           { superviseeIds: [...existing, superviseeUid] },
@@ -106,9 +106,12 @@ export async function POST(req: NextRequest) {
     // Send claim email to new supervisors
     if (supervisorIsNew) {
       try {
-        const link = await adminAuth.generatePasswordResetLink(supervisorEmail, {
-          url: `${process.env.NEXT_PUBLIC_APP_URL}/login`,
-        });
+        const link = await adminAuth.generatePasswordResetLink(
+          supervisorEmail,
+          {
+            url: `${process.env.NEXT_PUBLIC_APP_URL}/login`,
+          }
+        );
         await sendEmail({
           to: supervisorEmail,
           subject: `${firstName} ${lastName} added you as their supervisor`,
@@ -125,7 +128,9 @@ export async function POST(req: NextRequest) {
         to: supervisorEmail,
         subject: `${firstName} ${lastName} added you as their supervisor`,
         body: supervisorEmailBody,
-      }).catch((err) => console.error('[signup] supervisor notify failed:', err));
+      }).catch((err) =>
+        console.error('[signup] supervisor notify failed:', err)
+      );
     }
 
     // Send welcome email to supervisee with magic link to web app
@@ -155,6 +160,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, userId: superviseeUid });
   } catch (err) {
     console.error('[api/signup]', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import type { UserProfile } from '@/types';
+import { profileGetSchema } from './schema';
 
 export async function GET(req: NextRequest) {
-  const email = req.nextUrl.searchParams.get('email');
-  if (!email) {
-    return NextResponse.json({ error: 'email is required' }, { status: 400 });
+  const parsed = profileGetSchema.safeParse({
+    email: req.nextUrl.searchParams.get('email'),
+  });
+  if (!parsed.success) {
+    console.error(
+      '[api/profile GET] 400 invalid params:',
+      parsed.error.flatten()
+    );
+    return NextResponse.json(
+      { error: parsed.error.flatten() },
+      { status: 400 }
+    );
   }
+  const { email } = parsed.data;
 
   try {
     const user = await adminAuth.getUserByEmail(email);
@@ -18,6 +29,10 @@ export async function GET(req: NextRequest) {
       .get();
 
     if (snap.empty) {
+      console.error(
+        '[api/profile GET] 404 profile not found for email:',
+        email
+      );
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }
 
@@ -38,6 +53,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ supervisorEmail });
   } catch (err: unknown) {
     if ((err as { code?: string }).code === 'auth/user-not-found') {
+      console.error(
+        '[api/profile GET] 404 auth user not found for email:',
+        email
+      );
       return NextResponse.json({ error: 'Account not found' }, { status: 404 });
     }
     console.error('[api/profile]', err);

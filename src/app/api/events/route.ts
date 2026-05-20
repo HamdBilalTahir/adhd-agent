@@ -5,17 +5,7 @@ import { detectDrift } from '@/lib/patterns';
 import { createIntervention } from '@/lib/intervention';
 import { sendEmail } from '@/lib/notify';
 import type { UserEvent, Intervention, WithId } from '@/types';
-
-interface PostBody {
-  userEmail: string;
-  supervisorEmail: string;
-  tabCount: number;
-  activeTabTitle: string;
-  activeTabUrl: string;
-  timestamp?: number;
-  responded?: boolean;
-  response?: string;
-}
+import { eventsPostSchema } from './schema';
 
 async function getOrCreateProfile(
   email: string,
@@ -85,14 +75,15 @@ async function sendClaimEmail(email: string): Promise<void> {
 export async function POST(req: NextRequest) {
   const start = Date.now();
   try {
-    const body: PostBody = await req.json();
-
-    if (!body.userEmail || !body.supervisorEmail) {
+    const parsed = eventsPostSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      console.error('[api/events] 400 invalid body:', parsed.error.flatten());
       return NextResponse.json(
-        { error: 'userEmail and supervisorEmail are required' },
+        { error: parsed.error.flatten() },
         { status: 400 }
       );
     }
+    const body = parsed.data;
 
     const [{ uid }, { uid: supervisorUid, isNew: supervisorIsNew }] =
       await Promise.all([

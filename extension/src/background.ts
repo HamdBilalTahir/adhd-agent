@@ -79,7 +79,12 @@ async function runMonitorTick(): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (res.ok) data = (await res.json()) as ApiResponse;
+    if (res.ok) {
+      data = (await res.json()) as ApiResponse;
+    } else {
+      const body = await res.text().catch(() => '');
+      console.error(`[adhd-agent] heartbeat ${res.status}:`, body);
+    }
   } catch (err) {
     console.warn('[adhd-agent] heartbeat failed, will retry next tick:', err);
     return;
@@ -93,8 +98,12 @@ async function runMonitorTick(): Promise<void> {
 }
 
 async function handleResponded(msg: ResponseMessage): Promise<void> {
-  const result = await chrome.storage.local.get(['userEmail']);
+  const result = await chrome.storage.local.get([
+    'userEmail',
+    'supervisorEmail',
+  ]);
   const userEmail = result['userEmail'] as string;
+  const supervisorEmail = result['supervisorEmail'] as string;
 
   if (msg.response === 'break') {
     await chrome.storage.local.set({
@@ -103,16 +112,21 @@ async function handleResponded(msg: ResponseMessage): Promise<void> {
   }
 
   try {
-    await fetch(`${API_URL}/api/events`, {
+    const res = await fetch(`${API_URL}/api/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userEmail,
+        supervisorEmail,
         responded: true,
         response: msg.response,
         timestamp: Date.now(),
       }),
     });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(`[adhd-agent] response post ${res.status}:`, body);
+    }
   } catch (err) {
     console.error('[adhd-agent] response post error:', err);
   }

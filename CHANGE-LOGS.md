@@ -25,7 +25,48 @@
 
 ---
 
+> ### Extension — fix 400 on user response, log non-ok heartbeats
+>
+> - **What changed:** `handleResponded` in `extension/src/background.ts` was sending `POST /api/events` without `supervisorEmail`, causing every user response (back-on-task / break) to return 400 — the events route requires both emails. Fixed by loading `supervisorEmail` from `chrome.storage.local` alongside `userEmail`. Added `console.error` logging for non-ok responses in both `runMonitorTick` and `handleResponded` so failures appear in the extension service worker log instead of being silently swallowed. Rebuilt extension dist.
+> - **Why:** Every overlay response was hitting a 400 and being discarded silently. The extension appeared to stop because the responded event was never acknowledged, leaving the monitoring loop in an inconsistent state.
+> - **Files:**
+>   - `extension/src/background.ts` (`supervisorEmail` added to `handleResponded`, non-ok logging added)
+>   - `extension/dist/background.js` (rebuilt)
+
+---
+
+> ### API error logging — all routes log every non-2xx response
+>
+> - **What changed:** Added `console.error` before every 400, 404, and 500 response across all API routes (`/api/events`, `/api/signup`, `/api/alert`, `/api/intervene`, `/api/invite`, `/api/profile`, `/api/settings`). Each log line includes a bracketed route tag, the status code, and the relevant context (missing field names, userId, email, etc.) so failures are searchable in Vercel logs.
+> - **Why:** 400s were completely invisible in Vercel — the screenshot showed requests returning 400 with "No logs found for this request", making it impossible to diagnose what the extension was sending.
+> - **Files:**
+>   - `src/app/api/events/route.ts`
+>   - `src/app/api/signup/route.ts`
+>   - `src/app/api/alert/route.ts`
+>   - `src/app/api/intervene/route.ts`
+>   - `src/app/api/invite/route.ts`
+>   - `src/app/api/profile/route.ts`
+>   - `src/app/api/settings/route.ts`
+
+---
+
 ### ♻️ Refactors
+
+---
+
+> ### Zod request validation schemas for all API routes
+>
+> - **What changed:** Created `schema.ts` under each API route directory with Zod schemas for every request shape. All routes now use `safeParse` instead of manual `if (!field)` checks — validation errors return a structured `flattenedErrors` object. Routes updated: `events`, `signup`, `alert`, `intervene`, `invite`, `profile`, `settings`.
+> - **Why:** Manual field checks were inconsistent (some checked `=== undefined`, some used truthiness), gave vague error messages, and had no type inference. Zod schemas are the single source of truth for what each route accepts and produce typed, validated data after parsing.
+> - **Files:**
+>   - `src/app/api/events/schema.ts` (new)
+>   - `src/app/api/signup/schema.ts` (new)
+>   - `src/app/api/alert/schema.ts` (new)
+>   - `src/app/api/intervene/schema.ts` (new)
+>   - `src/app/api/invite/schema.ts` (new)
+>   - `src/app/api/profile/schema.ts` (new)
+>   - `src/app/api/settings/schema.ts` (new)
+>   - All corresponding `route.ts` files updated to use `safeParse`
 
 ---
 

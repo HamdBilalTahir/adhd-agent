@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
-import type { UserProfile } from '@/types';
+import { settingsGetSchema, settingsPutSchema } from './schema';
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get('userId');
-  if (!userId) {
-    return NextResponse.json({ error: 'userId query param is required' }, { status: 400 });
+  const parsed = settingsGetSchema.safeParse({
+    userId: req.nextUrl.searchParams.get('userId'),
+  });
+  if (!parsed.success) {
+    console.error(
+      '[api/settings GET] 400 invalid params:',
+      parsed.error.flatten()
+    );
+    return NextResponse.json(
+      { error: parsed.error.flatten() },
+      { status: 400 }
+    );
   }
+  const { userId } = parsed.data;
   try {
     const snap = await adminDb
       .collection('userProfiles')
@@ -15,22 +25,36 @@ export async function GET(req: NextRequest) {
       .get();
 
     if (snap.empty) {
+      console.error(
+        '[api/settings GET] 404 profile not found for userId:',
+        userId
+      );
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }
     return NextResponse.json(snap.docs[0].data());
   } catch (err) {
     console.error('[api/settings GET]', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(req: NextRequest) {
   try {
-    const body: { userId: string } & Partial<UserProfile> = await req.json();
-    if (!body.userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    const parsed = settingsPutSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      console.error(
+        '[api/settings PUT] 400 invalid body:',
+        parsed.error.flatten()
+      );
+      return NextResponse.json(
+        { error: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
-    const { userId, ...fields } = body;
+    const { userId, ...fields } = parsed.data;
 
     const snap = await adminDb
       .collection('userProfiles')
@@ -39,6 +63,10 @@ export async function PUT(req: NextRequest) {
       .get();
 
     if (snap.empty) {
+      console.error(
+        '[api/settings PUT] 404 profile not found for userId:',
+        userId
+      );
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
     }
 
@@ -46,6 +74,9 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/settings PUT]', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
