@@ -30,36 +30,54 @@ function showOverlay(message: string, _level: number): void {
   overlay.id = 'adhd-overlay';
   overlay.style.cssText =
     'position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;' +
-    'background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;pointer-events:all;';
+    'background:rgba(15,15,20,0.82);backdrop-filter:blur(4px);display:flex;' +
+    'align-items:center;justify-content:center;pointer-events:all;';
 
   const card = document.createElement('div') as HTMLDivElement;
   card.style.cssText =
-    'background:white;border-radius:16px;padding:40px;max-width:480px;width:100%;text-align:center;';
+    'background:#ffffff;border-radius:20px;padding:40px 44px;max-width:520px;width:calc(100% - 48px);' +
+    'text-align:center;box-shadow:0 24px 80px rgba(0,0,0,0.35);';
 
   const heading = document.createElement('h2') as HTMLHeadingElement;
-  heading.textContent = 'Hey. You still there?';
+  heading.textContent = 'Focus check-in';
   heading.style.cssText =
-    'margin:0 0 16px;font-size:24px;font-weight:700;color:#111;font-family:system-ui,sans-serif;';
+    'margin:0 0 6px;font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;' +
+    'color:#6366f1;font-family:system-ui,sans-serif;';
 
   const msgEl = document.createElement('p') as HTMLParagraphElement;
   msgEl.textContent = message;
   msgEl.style.cssText =
-    'margin:0 0 32px;font-size:16px;color:#444;line-height:1.5;font-family:system-ui,sans-serif;';
+    'margin:0 0 32px;font-size:20px;font-weight:500;color:#111827;line-height:1.55;' +
+    'font-family:system-ui,sans-serif;';
 
   const btnRow = document.createElement('div') as HTMLDivElement;
-  btnRow.style.cssText = 'display:flex;gap:12px;justify-content:center;';
+  btnRow.style.cssText = 'display:flex;gap:10px;justify-content:center;';
 
   const primaryBtn = document.createElement('button') as HTMLButtonElement;
   primaryBtn.textContent = "I'm back on task";
   primaryBtn.style.cssText =
-    'padding:12px 24px;border:none;border-radius:8px;background:#2563eb;color:white;' +
-    'font-size:15px;font-weight:600;cursor:pointer;font-family:system-ui,sans-serif;';
+    'padding:11px 22px;border:none;border-radius:10px;background:#6366f1;color:white;' +
+    'font-size:14px;font-weight:600;cursor:pointer;font-family:system-ui,sans-serif;' +
+    'transition:background 0.15s;';
+  primaryBtn.onmouseenter = () => {
+    primaryBtn.style.background = '#4f46e5';
+  };
+  primaryBtn.onmouseleave = () => {
+    primaryBtn.style.background = '#6366f1';
+  };
 
   const secondaryBtn = document.createElement('button') as HTMLButtonElement;
   secondaryBtn.textContent = 'Need a break';
   secondaryBtn.style.cssText =
-    'padding:12px 24px;border:2px solid #d1d5db;border-radius:8px;background:white;color:#374151;' +
-    'font-size:15px;font-weight:600;cursor:pointer;font-family:system-ui,sans-serif;';
+    'padding:11px 22px;border:1.5px solid #e5e7eb;border-radius:10px;background:#f9fafb;color:#374151;' +
+    'font-size:14px;font-weight:600;cursor:pointer;font-family:system-ui,sans-serif;' +
+    'transition:background 0.15s;';
+  secondaryBtn.onmouseenter = () => {
+    secondaryBtn.style.background = '#f3f4f6';
+  };
+  secondaryBtn.onmouseleave = () => {
+    secondaryBtn.style.background = '#f9fafb';
+  };
 
   function blockEscape(e: KeyboardEvent): void {
     if (e.key === 'Escape') e.preventDefault();
@@ -92,7 +110,7 @@ function showOverlay(message: string, _level: number): void {
       document.head.appendChild(styleEl);
       card.style.animation = 'adhd-pulse 1s ease infinite';
       card.style.border = '3px solid rgb(239,68,68)';
-      heading.textContent = 'Still there? Your supervisor has been notified.';
+      heading.textContent = 'Still there? — Your supervisor has been notified.';
     },
     2 * 60 * 1000
   );

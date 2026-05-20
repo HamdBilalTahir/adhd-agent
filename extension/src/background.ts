@@ -49,14 +49,18 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('ADHD Agent installed and monitoring');
 });
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
+chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== 'monitor') return;
+  runMonitorTick().catch((err) =>
+    console.error('[adhd-agent] tick error:', err)
+  );
+});
 
-  const settings = await getSettings();
-  if (!settings) return;
-  if (isPaused(settings)) return;
+async function runMonitorTick(): Promise<void> {
+  const settings = await getSettings().catch(() => null);
+  if (!settings || isPaused(settings)) return;
 
-  const tabs = await chrome.tabs.query({});
+  const tabs = await chrome.tabs.query({}).catch(() => []);
   const activeTab = tabs.find((t) => t.active);
 
   const payload: EventPayload = {
@@ -68,20 +72,25 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     timestamp: Date.now(),
   };
 
+  let data: ApiResponse = { intervene: false };
   try {
     const res = await fetch(`${API_URL}/api/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const data = (await res.json()) as ApiResponse;
-    if (data.intervene && data.message) {
-      await sendOverlayToActiveTab(data.message, data.level ?? 2);
-    }
+    if (res.ok) data = (await res.json()) as ApiResponse;
   } catch (err) {
-    console.error('[adhd-agent] fetch error:', err);
+    console.warn('[adhd-agent] heartbeat failed, will retry next tick:', err);
+    return;
   }
-});
+
+  if (data.intervene && data.message) {
+    await sendOverlayToActiveTab(data.message, data.level ?? 2).catch((err) =>
+      console.warn('[adhd-agent] overlay failed:', err)
+    );
+  }
+}
 
 async function handleResponded(msg: ResponseMessage): Promise<void> {
   const result = await chrome.storage.local.get(['userEmail']);

@@ -12,7 +12,10 @@
     "typecheck": "tsc --noEmit",
     "build:extension": "esbuild extension/src/background.ts extension/src/content.ts extension/src/popup.ts --bundle --outdir=extension/dist --target=chrome120 --format=iife",
     "watch:extension": "esbuild extension/src/background.ts extension/src/content.ts extension/src/popup.ts --bundle --outdir=extension/dist --target=chrome120 --format=iife --watch",
-    "package:extension": "yarn build:extension && rm -f adhd-agent-extension.zip && zip -r adhd-agent-extension.zip extension/dist/ extension/manifest.json extension/popup.html"
+    "package:extension": "yarn build:extension && rm -f adhd-agent-extension.zip && zip -r adhd-agent-extension.zip extension/dist/ extension/manifest.json extension/popup.html",
+    "deploy:indexes": "firebase deploy --only firestore:indexes",
+    "deploy:rules": "firebase deploy --only firestore:rules",
+    "deploy:firestore": "firebase deploy --only firestore"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
@@ -41,6 +44,7 @@
     "eslint-config-next": "16.1.6",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
+    "firebase-tools": "^15.18.0",
     "husky": "^9.1.7",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",

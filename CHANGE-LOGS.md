@@ -47,6 +47,73 @@
 
 ---
 
+> ### ESLint — fix "file ignored" warnings and scoped global declarations
+>
+> - **What changed:** Added `files: ["**/*.{js,jsx,ts,tsx}"]` to the main ESLint config block so lint-staged no longer warns "File ignored because no matching configuration was supplied" when passing absolute paths. Added `globals.browser` to the same block so `console` and other browser globals resolve without error in React and Next.js files. Removed the unused `statusEl` variable from `extension/src/popup.ts` (left over from the settings-view redesign). Added `/* global process */` at the file level in `src/lib/claude.ts` and `src/app/api/events/route.ts` — the two server files that reference `process.env` — rather than enabling `globals.node` globally.
+> - **Why:** The pre-commit hook was failing on every commit due to the "file ignored" warning being treated as an error by lint-staged. The `process` suppression is kept file-scoped rather than global so client-side files don't silently gain access to Node globals.
+> - **Files:**
+>   - `eslint.config.mjs`
+>   - `extension/src/popup.ts` (`statusEl` removed)
+>   - `src/lib/claude.ts` (`/* global process */` added)
+>   - `src/app/api/events/route.ts` (`/* global process */` added)
+
+---
+
+> ### Fault-tolerant heartbeat — isolated failures, no cascading crashes
+>
+> - **What changed:** Made every non-critical operation in both the extension and the API fire-and-forget so a single failure never kills the monitoring loop. **Extension (`background.ts`)**: extracted tick logic into `runMonitorTick()` so the alarm handler calls it with `.catch()` — an unhandled throw no longer silently kills the service worker for that tick. `getSettings()` and `chrome.tabs.query()` each have `.catch()` fallbacks (null / empty array). Non-2xx API responses skip intervention instead of throwing. Overlay send failure is caught as a warning. **API (`/api/events`)**: supervisor-link Firestore write, heartbeat event write, and all `activityLogs` writes are now fire-and-forget (`.catch(warn)`) — they never block the response. Drift-detection queries are wrapped in try/catch; on failure the route returns `{ intervene: false }` instead of 500. Gemini/intervention creation is wrapped in try/catch with the same fallback. Only `getOrCreateProfile` (which resolves the UID) is still allowed to throw — without a UID there is nothing to act on.
+> - **Why:** A Firestore write timeout, a missing index, or a Gemini API hiccup was returning 500 and stopping the extension from getting any response, which broke the monitoring loop entirely. Now each layer degrades gracefully.
+> - **Files:**
+>   - `extension/src/background.ts`
+>   - `extension/dist/background.js` (rebuilt)
+>   - `src/app/api/events/route.ts`
+
+---
+
+> ### Extension popup — auth/settings views, login tab, supervisor update
+>
+> - **What changed:** Redesigned the extension popup into two distinct views. **Auth view** (shown when not configured): tab toggle between "New here?" (first name, last name, email, supervisor email → calls `/api/signup`) and "Have an account?" (email only → calls `GET /api/profile?email=...` to look up the supervisor from Firestore, then activates; shows "Account not found. Sign up first." on 404). **Settings view** (shown automatically when already active): account card with green "● Active" dot, user name and email; editable Supervisor Email field; "Save changes" updates `chrome.storage.local` and re-calls `/api/signup` to update the Firestore supervisor linkage; "Sign out" clears storage and returns to auth view. If already configured, popup opens directly on the settings view. Added `GET /api/profile` route: takes `?email=` query param, looks up `userProfiles` by `userId`, resolves the supervisor's email via `supervisorId`, returns `{ supervisorEmail }` or 404.
+> - **Why:** The old popup had no way to log back in after clearing settings, no way to update the supervisor, and no way to see current account status. The two-view design separates first-time setup from ongoing management.
+> - **Files:**
+>   - `extension/popup.html`
+>   - `extension/src/popup.ts`
+>   - `extension/dist/popup.js` (rebuilt)
+>   - `src/app/api/profile/route.ts` (new)
+
+---
+
+> ### Fix overlay UI and Gemini model errors
+>
+> - **What changed:** Fixed three bugs in the intervention overlay. (1) **Wrong model name**: `gemini-3.1-pro-preview` doesn't exist — replaced with `gemini-2.0-flash` in `lib/claude.ts`. (2) **`Cannot read properties of undefined (reading 'text')` crash**: the content extraction `response.content[0].text` threw when Gemini returned an empty array; replaced the one-liner cast with a safe branch that handles plain string, `string[]`, and `{ text }[]` response shapes, with a hardcoded fallback message if all branches yield empty. (3) **Overlay UI redesign**: updated `extension/src/content.ts` — backdrop is now `rgba(15,15,20,0.82)` with `backdrop-filter: blur(4px)`, card has a larger max-width (520px) and heavier shadow, the heading is now a small indigo eyebrow label "Focus check-in", the AI message is displayed in a larger 20px font as the primary element, buttons are indigo-themed with hover states.
+> - **Why:** The wrong model name caused every intervention to 500; the unsafe content access crashed whenever Gemini returned an unexpected response shape. Both left the overlay showing "Esc" (a stale/corrupted message) instead of a real AI message.
+> - **Files:**
+>   - `src/lib/claude.ts` (model name fix, safe content extraction, fallback message)
+>   - `extension/src/content.ts` (overlay redesign)
+>   - `extension/dist/content.js` (rebuilt)
+
+---
+
+> ### Firestore composite indexes deployed
+>
+> - **What changed:** Created all 5 required composite indexes in Firebase Console: `events (userId ASC, createdAt DESC)`, `interventions (userId ASC, createdAt DESC)`, `activityLogs (userId ASC, createdAt DESC)`, `sessions (userId ASC, createdAt DESC)`, `alerts (userId ASC, sentAt DESC)`. Also wrote `scripts/deploy-indexes.mjs` — a Node.js script that authenticates via a manually constructed RS256 JWT (using `crypto.createSign`) to get a Google OAuth2 access token, then calls the Firestore REST API to create each index defined in `firestore.indexes.json`. The script couldn't be used directly because the Firebase Admin SDK service account lacks the `datastore.indexAdmin` IAM role; indexes were created via Firebase Console instead.
+> - **Why:** All ordered queries on the flat collections (e.g. `where userId == x orderBy createdAt desc`) require composite indexes. Without them every query failed with a Firestore "requires an index" error.
+> - **Files:**
+>   - `scripts/deploy-indexes.mjs` (new)
+>   - `firestore.indexes.json`
+>   - `package.json` (`deploy:indexes`, `deploy:rules`, `deploy:firestore` scripts; `firebase-tools` dev dep)
+
+---
+
+> ### Supervisee detail page — live Firestore data
+>
+> - **What changed:** Rewrote `/supervisor/[superviseeId]` as a real-time client component. Uses `onSnapshot` on `events where userId == superviseeId orderBy createdAt desc limit 20` for a live event feed and a one-time `getDocs` on `userProfiles where userId == superviseeId` for the profile. Displays a Focus Status card (last seen, open tab count, active tab title) and the full `EventFeed`. Added `DriftBadge` component that maps `tabCount` and event age to "On track" / "Drifting" / "Offline" states with colour-coded pills. Shows skeleton loaders while data loads. Replaced `event.timestamp` with `event.createdAt` in `EventFeed` to match the flat-collection schema.
+> - **Why:** The page previously showed placeholder static data; supervisors need live visibility into their supervisee's browser state.
+> - **Files:**
+>   - `src/app/(dashboard)/supervisor/[superviseeId]/page.tsx` (full rewrite)
+>   - `src/components/dashboard/EventFeed.tsx` (`timestamp` → `createdAt`)
+
+---
+
 > ### Schema migration — flat collections, extension signup with name fields
 >
 > - **What changed:** Full Firestore schema redesign. All collections are now flat top-level collections with auto-generated doc IDs and `userId` as a foreign key field (Firebase Auth UID). Removed nested subcollections (`users/{uid}/events`, `users/{uid}/status`, `users/{uid}/settings`). Merged `userMonitoring` into `events` (heartbeats are `type: 'heartbeat'` events). Final collections: `userProfiles`, `events`, `interventions`, `alerts`, `sessions`, `activityLogs`, `taskBlocks`, `relationships`. Updated `src/types/index.ts` — replaced `User`/`UserStatus`/`UserSettings` with `UserProfile`, `UserEvent`, `Alert`, `Session`, `ActivityLog`. Updated all files that referenced the old schema: `DashboardShell`, `page.tsx`, `onboarding/supervisor`, `supervisor/page.tsx`, `lib/collections.ts`, `lib/intervention.ts`, `lib/alert.ts`, `lib/claude.ts`, all API routes. Rewrote `firestore.rules` and `firestore.indexes.json` for the new flat structure. Extension popup now collects First Name and Last Name. On "Save & Activate" the popup calls `POST /api/signup` to create accounts for both the supervisee and supervisor, link them via `supervisorId`, and send a welcome email to the supervisee and a "claim your account" email to new supervisors. New `POST /api/signup` route handles the full account-creation flow. `API_URL` moved to `extension/src/types.ts` as a shared constant. Fixed production 400 errors on `POST /api/events` — the deployed API expected `userId` but the extension sends `userEmail`; the route now accepts email-based payloads and auto-creates/links accounts on every heartbeat.

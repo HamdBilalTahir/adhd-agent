@@ -49,7 +49,9 @@ ADHD Agent is a real-time focus monitoring system. A Chrome extension watches th
 │    → user responds or 2-min escalation      │
 │                                              │
 │  popup.ts — settings UI                     │
-│    → stores userEmail + supervisorEmail     │
+│    → firstName, lastName, userEmail,        │
+│      supervisorEmail → chrome.storage       │
+│    → POST /api/signup on first save         │
 └──────────────────┬──────────────────────────┘
                    │ POST /api/events
                    │ (EventPayload)
@@ -57,33 +59,37 @@ ADHD Agent is a real-time focus monitoring system. A Chrome extension watches th
 │         Next.js API (Vercel)                 │
 │                                              │
 │  /api/events                                │
-│    → writes tab_switch event to Firestore   │
-│    → updates status/current doc             │
+│    → getOrCreateProfile() for both emails   │
+│    → links supervisorId on supervisee       │
+│    → writes heartbeat to events collection  │
 │    → fetches last 20 events + last          │
 │      intervention in parallel               │
 │    → runs detectDrift → level 0–5           │
-│    → if level ≥ 2: calls createIntervention │
-│                                              │
-│  /api/intervene                             │
-│    → delegates to createIntervention()      │
+│    → if level ≥ 2: createIntervention()     │
+│    → returns { intervene, message, level }  │
+│                                             │
+│  /api/signup                                │
+│    → creates Firebase Auth for supervisee   │
+│    → creates/links supervisor account       │
+│    → sends welcome + claim emails           │
 │                                             │
 │  /api/alert                                 │
-│    → 30-min dedup check                    │
-│    → writes supervisor_alerted event        │
+│    → looks up supervisorId from profile     │
+│    → writes to alerts collection            │
 │    → sends email via Resend                 │
 └──────────┬──────────────────┬───────────────┘
            │                  │
 ┌──────────▼──────┐  ┌────────▼────────────────┐
 │   Firestore      │  │   External Services      │
-│                  │  │                          │
-│  /users          │  │  Gemini (LangChain)      │
-│  /users/*/status │  │  → generateIntervention  │
-│  /users/*/events │  │                          │
-│  /users/*/       │  │  Resend                  │
-│    settings      │  │  → sendEmail             │
-│  /interventions  │  │    (alerts@kuailabs.ai)  │
-│  /relationships  │  └──────────────────────────┘
-│  /taskBlocks     │
+│  (flat schema)   │  │                          │
+│                  │  │  Gemini (LangChain)      │
+│  userProfiles    │  │  → generateIntervention  │
+│  events          │  │    gemini-2.0-flash       │
+│  interventions   │  │                          │
+│  activityLogs    │  │  Resend                  │
+│  sessions        │  │  → sendEmail             │
+│  alerts          │  │    (alerts@kuailabs.ai)  │
+│  taskBlocks      │  └──────────────────────────┘
 └──────────────────┘
 ```
 
@@ -91,20 +97,20 @@ ADHD Agent is a real-time focus monitoring system. A Chrome extension watches th
 
 ## 3. Technology Stack
 
-| Layer             | Technology              | Version                  |
-| ----------------- | ----------------------- | ------------------------ |
-| Framework         | Next.js App Router      | 16.1.6                   |
-| UI                | React                   | 19.2.3                   |
-| Language          | TypeScript              | ^5                       |
-| Auth              | Firebase Authentication | ^12                      |
-| Database          | Firestore (Firebase)    | ^12                      |
-| Admin SDK         | firebase-admin          | ^13                      |
-| AI                | LangChain + Gemini      | `gemini-3.1-pro-preview` |
-| Email             | Resend                  | ^6                       |
-| Extension bundler | esbuild                 | ^0.28                    |
-| Extension types   | @types/chrome           | ^0.1                     |
-| Styling           | Tailwind CSS            | ^4                       |
-| Hosting           | Vercel                  | —                        |
+| Layer             | Technology              | Version            |
+| ----------------- | ----------------------- | ------------------ |
+| Framework         | Next.js App Router      | 16.1.6             |
+| UI                | React                   | 19.2.3             |
+| Language          | TypeScript              | ^5                 |
+| Auth              | Firebase Authentication | ^12                |
+| Database          | Firestore (Firebase)    | ^12                |
+| Admin SDK         | firebase-admin          | ^13                |
+| AI                | LangChain + Gemini      | `gemini-2.0-flash` |
+| Email             | Resend                  | ^6                 |
+| Extension bundler | esbuild                 | ^0.28              |
+| Extension types   | @types/chrome           | ^0.1               |
+| Styling           | Tailwind CSS            | ^4                 |
+| Hosting           | Vercel                  | —                  |
 
 ---
 
@@ -174,7 +180,7 @@ The extension is a Chrome MV3 extension written in TypeScript, compiled to `exte
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `background.ts` | Service worker. Creates a `monitor` alarm (every 10s). On each tick: reads settings from `chrome.storage.local`, queries all open tabs, POSTs `EventPayload` to `/api/events`, sends `SHOW_OVERLAY` to the active tab if `intervene: true`. Handles `RESPONDED` messages — `back_on_task` confirms focus, `break` sets a 15-minute `pausedUntil` pause. |
 | `content.ts`    | Injected into every page. Listens for `SHOW_OVERLAY`, injects a full-screen overlay with the AI message and two buttons. Escape key is blocked while overlay is present. After 2 minutes with no response: plays a Web Audio API beep and escalates visually with a pulsing red border.                                                                 |
-| `popup.ts`      | Settings UI. Reads/writes `userEmail` and `supervisorEmail` from `chrome.storage.local`. Validates both fields, shows green Active / red Not configured status.                                                                                                                                                                                         |
+| `popup.ts`      | Settings UI. Reads/writes `firstName`, `lastName`, `userEmail`, `supervisorEmail` from `chrome.storage.local`. On first save calls `POST /api/signup` to create accounts. Shows green Active / red Not configured status.                                                                                                                               |
 | `types.ts`      | Shared interfaces: `ExtensionSettings`, `EventPayload`, `ApiResponse`, `OverlayMessage`, `ResponseMessage`, `SettingsUpdatedMessage`, `ExtensionMessage`.                                                                                                                                                                                               |
 
 ### Message Flow
@@ -199,7 +205,7 @@ yarn package:extension  # build + zip for store submission
 
 ### `POST /api/events`
 
-Heartbeat from the extension. Writes a `tab_switch` event, updates `status/current`, runs drift detection, and returns an intervention if needed.
+Heartbeat from the extension. Auto-creates Firebase Auth accounts for both emails if they don't exist, links `supervisorId` on the supervisee profile, writes a `heartbeat` event, runs drift detection, and returns an intervention if needed.
 
 **Request:**
 
@@ -219,24 +225,23 @@ Heartbeat from the extension. Writes a `tab_switch` event, updates `status/curre
 ```json
 { "intervene": false }
 // or
-{ "intervene": true, "message": "Hey, you've had 18 tabs open...", "level": 3 }
+{ "intervene": true, "message": "You've got 18 tabs open — what's the one thing...", "level": 3 }
 ```
 
 ---
 
-### `POST /api/intervene`
+### `POST /api/signup`
 
-Manual intervention trigger. Delegates to `createIntervention()`.
+Called once from the extension popup on first save. Creates accounts, links the supervisor relationship, and sends emails.
 
 **Request:**
 
 ```json
 {
-  "userId": "string",
-  "driftLevel": 3,
-  "tabCount": 18,
-  "activeTabTitle": "string",
-  "currentTask": "string | null"
+  "firstName": "string",
+  "lastName": "string",
+  "email": "string",
+  "supervisorEmail": "string"
 }
 ```
 
@@ -244,16 +249,15 @@ Manual intervention trigger. Delegates to `createIntervention()`.
 
 ### `POST /api/alert`
 
-Sends a supervisor email notification. 30-minute dedup via `status.supervisorAlertedAt`.
+Writes to `alerts` collection and sends supervisor email. Called automatically by `createIntervention()` when drift level ≥ 4.
 
 **Request:**
 
 ```json
 {
   "userId": "string",
-  "driftLevel": 4,
-  "currentApp": "string",
-  "minutesOffTask": 25
+  "message": "string",
+  "level": 4
 }
 ```
 
@@ -303,10 +307,10 @@ createIntervention()
 
 `lib/alert.ts` — `triggerAlert()` fires when drift level ≥ 4.
 
-- Saves to `alerts` collection
+- Saves to `alerts` collection with `supervisorId` field
+- Looks up supervisor email from `userProfiles where userId == supervisorId`
 - Sends email via Resend from `alerts@kuailabs.ai`
-- 30-minute dedup enforced in `/api/alert` via `status.supervisorAlertedAt`
-- Supervisor email is looked up from the Firestore `relationships` collection (TODO — currently a null placeholder until supervisor accounts are implemented)
+- Auto-triggered by `createIntervention()` at drift level ≥ 4
 
 ---
 
@@ -326,31 +330,46 @@ Login and signup pages are `'use client'` components using `signInWithEmailAndPa
 
 ## 11. Firestore Schema
 
+All collections are **flat top-level collections** with auto-generated document IDs. `userId` is the foreign key (Firebase Auth UID) on every document. No nested subcollections.
+
 ```
-/users/{uid}                          → User
-/users/{uid}/status/current           → UserStatus
-/users/{uid}/events/{eventId}         → UserEvent
-/users/{uid}/settings/preferences     → UserSettings
-/relationships/{inviteCode}           → Relationship
-/interventions/{id}                   → Intervention
-/taskBlocks/{id}                      → TaskBlock
+/userProfiles/{docId}      → UserProfile
+/events/{docId}            → UserEvent
+/interventions/{docId}     → Intervention
+/activityLogs/{docId}      → ActivityLog
+/sessions/{docId}          → Session
+/alerts/{docId}            → Alert
+/taskBlocks/{docId}        → TaskBlock
 ```
+
+### Composite indexes (all required for ordered queries)
+
+| Collection      | Field 1      | Field 2          |
+| --------------- | ------------ | ---------------- |
+| `events`        | `userId` ASC | `createdAt` DESC |
+| `interventions` | `userId` ASC | `createdAt` DESC |
+| `activityLogs`  | `userId` ASC | `createdAt` DESC |
+| `sessions`      | `userId` ASC | `createdAt` DESC |
+| `alerts`        | `userId` ASC | `sentAt` DESC    |
 
 ### Key types
 
-**UserStatus**
+**UserProfile**
 
 ```typescript
 {
-  online: boolean;
-  lastSeen: string;
-  currentApp: string | null;
-  tabCount: number;
-  driftLevel: 'none' | 'low' | 'medium' | 'high';
-  currentTask: string | null;
-  interventionMessage: string | null;
-  supervisorAlerted: boolean;
-  supervisorAlertedAt: string | null;
+  userId: string;          // Firebase Auth UID
+  firstName: string;
+  lastName: string;
+  email: string;
+  roles: ('supervisee' | 'supervisor')[];
+  supervisorId?: string;   // UID of their supervisor
+  superviseeIds?: string[];
+  createdAt: string;
+  claimed: boolean;        // false until supervisor sets a password
+  notifyEmail?: boolean;
+  notifySMS?: boolean;
+  supervisorPhone?: string;
 }
 ```
 
@@ -358,19 +377,38 @@ Login and signup pages are `'use client'` components using `signInWithEmailAndPa
 
 ```typescript
 {
-  type: 'tab_switch' |
-    'app_switch' |
-    'idle' |
-    'active' |
-    'distraction_detected' |
-    'task_started' |
-    'task_completed' |
-    'focus_session_started' |
-    'focus_session_ended' |
-    'supervisor_alerted';
-  source: 'extension' | 'daemon';
-  metadata: Record<string, unknown>;
-  timestamp: string;
+  userId: string;
+  type: 'heartbeat' |
+    'intervention_triggered' |
+    'session_created' |
+    'session_ended' |
+    'user_signup';
+  source: 'extension' | 'api' | 'web';
+  metadata: Record<string, unknown>; // tabCount, activeTabTitle, etc.
+  createdAt: string;
+}
+```
+
+**Intervention**
+
+```typescript
+{
+  userId: string;
+  level: 1 | 2 | 3; // mapped from drift level 2–5
+  message: string;
+  createdAt: string;
+}
+```
+
+**Alert**
+
+```typescript
+{
+  userId: string;
+  supervisorId: string;
+  message: string;
+  level: number;
+  sentAt: string;
 }
 ```
 

@@ -1,9 +1,10 @@
+/* global process */
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 type AgentTone = 'gentle' | 'neutral' | 'firm';
 
 const model = new ChatGoogleGenerativeAI({
-  model: 'gemini-3.1-pro-preview',
+  model: 'gemini-2.0-flash',
   apiKey: process.env.GEMINI_API_KEY,
   maxOutputTokens: 100,
 });
@@ -56,7 +57,16 @@ Write the intervention message.`
     ),
   ]);
 
-  return typeof response.content === 'string'
-    ? response.content
-    : (response.content[0] as { text: string }).text;
+  let text: string | undefined;
+  if (typeof response.content === 'string') {
+    text = response.content;
+  } else if (Array.isArray(response.content) && response.content.length > 0) {
+    const first = response.content[0] as { text?: string } | string;
+    text = typeof first === 'string' ? first : first?.text;
+  }
+
+  return (
+    text?.trim() ||
+    "You've got a lot of tabs open — what's the one thing you should be focusing on right now?"
+  );
 }

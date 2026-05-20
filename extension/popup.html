@@ -12,7 +12,66 @@
       background: #fff;
       color: #111;
     }
-    h1 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+    h1 { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+
+    /* ── Auth view ── */
+    .tabs {
+      display: flex;
+      background: #f3f4f6;
+      border-radius: 8px;
+      padding: 3px;
+      margin-bottom: 16px;
+    }
+    .tab {
+      flex: 1;
+      padding: 6px 0;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      cursor: pointer;
+      width: auto;
+      margin-top: 0;
+    }
+    .tab.active { background: #fff; color: #111; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .tab:hover:not(.active) { color: #374151; }
+
+    /* ── Settings view ── */
+    .account-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+    .account-card .status-dot {
+      font-size: 12px;
+      font-weight: 600;
+      color: #16a34a;
+      margin-bottom: 6px;
+    }
+    .account-card .name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #111;
+    }
+    .account-card .email {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #9ca3af;
+      margin-bottom: 10px;
+    }
+
+    /* ── Shared ── */
     .row { display: flex; gap: 8px; }
     .row .field { flex: 1; }
     .field { margin-bottom: 12px; }
@@ -26,12 +85,13 @@
       color: #111;
       outline: none;
     }
-    input:focus { border-color: #2563eb; }
+    input:focus { border-color: #6366f1; }
     .error { color: #dc2626; font-size: 11px; margin-top: 3px; min-height: 14px; display: block; }
-    button {
+
+    .btn-primary {
       width: 100%;
       padding: 8px;
-      background: #2563eb;
+      background: #6366f1;
       color: white;
       border: none;
       border-radius: 6px;
@@ -40,46 +100,98 @@
       cursor: pointer;
       margin-top: 4px;
     }
-    button:hover { background: #1d4ed8; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    #status {
-      margin-top: 10px;
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-ghost {
+      width: 100%;
+      padding: 7px;
+      background: transparent;
+      color: #6b7280;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 6px;
       font-size: 12px;
-      text-align: center;
-      font-weight: 500;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
     }
+    .btn-ghost:hover { color: #374151; border-color: #d1d5db; }
+
+    #status { margin-top: 10px; font-size: 12px; text-align: center; font-weight: 500; }
+    #dashboardLink {
+      display: block;
+      margin-top: 10px;
+      text-align: center;
+      font-size: 12px;
+      color: #6366f1;
+      text-decoration: none;
+    }
+    #dashboardLink:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <h1>ADHD Agent</h1>
 
-  <div class="row">
-    <div class="field">
-      <label for="firstName">First Name</label>
-      <input type="text" id="firstName" placeholder="Jane">
-      <span class="error" id="firstNameError"></span>
+  <!-- ── Auth view (not configured) ── -->
+  <div id="authView">
+    <div class="tabs">
+      <button class="tab active" id="tabSignup">New here?</button>
+      <button class="tab" id="tabLogin">Have an account?</button>
     </div>
-    <div class="field">
-      <label for="lastName">Last Name</label>
-      <input type="text" id="lastName" placeholder="Doe">
-      <span class="error" id="lastNameError"></span>
+
+    <div id="signupFields">
+      <div class="row">
+        <div class="field">
+          <label for="firstName">First Name</label>
+          <input type="text" id="firstName" placeholder="Jane">
+          <span class="error" id="firstNameError"></span>
+        </div>
+        <div class="field">
+          <label for="lastName">Last Name</label>
+          <input type="text" id="lastName" placeholder="Doe">
+          <span class="error" id="lastNameError"></span>
+        </div>
+      </div>
     </div>
+
+    <div class="field">
+      <label for="userEmail">Your Email</label>
+      <input type="email" id="userEmail" placeholder="you@example.com">
+      <span class="error" id="userEmailError"></span>
+    </div>
+
+    <div class="field" id="supervisorField">
+      <label for="supervisorEmail">Supervisor Email</label>
+      <input type="email" id="supervisorEmail" placeholder="supervisor@example.com">
+      <span class="error" id="supervisorEmailError"></span>
+    </div>
+
+    <button class="btn-primary" id="saveBtn">Save &amp; Activate</button>
+    <div id="status"></div>
   </div>
 
-  <div class="field">
-    <label for="userEmail">Your Email</label>
-    <input type="email" id="userEmail" placeholder="you@example.com">
-    <span class="error" id="userEmailError"></span>
+  <!-- ── Settings view (active) ── -->
+  <div id="settingsView" style="display:none">
+    <div class="account-card">
+      <div class="status-dot">● Active</div>
+      <div class="name" id="settingsName"></div>
+      <div class="email" id="settingsEmail"></div>
+    </div>
+
+    <p class="section-label">Settings</p>
+
+    <div class="field">
+      <label for="settingsSupervisor">Supervisor Email</label>
+      <input type="email" id="settingsSupervisor" placeholder="supervisor@example.com">
+      <span class="error" id="settingsSupervisorError"></span>
+    </div>
+
+    <button class="btn-primary" id="updateBtn">Save changes</button>
+    <button class="btn-ghost" id="signOutBtn">Sign out</button>
   </div>
 
-  <div class="field">
-    <label for="supervisorEmail">Supervisor Email</label>
-    <input type="email" id="supervisorEmail" placeholder="supervisor@example.com">
-    <span class="error" id="supervisorEmailError"></span>
-  </div>
+  <a id="dashboardLink" href="#" target="_blank">Open dashboard →</a>
 
-  <button id="saveBtn">Save &amp; Activate</button>
-  <div id="status"></div>
   <script src="dist/popup.js"></script>
 </body>
 </html>

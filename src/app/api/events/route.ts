@@ -1,3 +1,4 @@
+/* global process */
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb, adminAuth } from '@/lib/firebase-admin';
 import { detectDrift } from '@/lib/patterns';
@@ -99,31 +100,40 @@ export async function POST(req: NextRequest) {
         getOrCreateProfile(body.supervisorEmail, { roles: ['supervisor'] }),
       ]);
 
-    // Link supervisorId on supervisee profile
-    const superviseeSnap = await adminDb
+    // Link supervisorId — non-critical, don't let it block the response
+    adminDb
       .collection('userProfiles')
       .where('userId', '==', uid)
       .limit(1)
-      .get();
-    if (!superviseeSnap.empty) {
-      await superviseeSnap.docs[0].ref.set(
-        { supervisorId: supervisorUid },
-        { merge: true }
+      .get()
+      .then((snap) => {
+        if (!snap.empty)
+          snap.docs[0].ref.set(
+            { supervisorId: supervisorUid },
+            { merge: true }
+          );
+      })
+      .catch((err) =>
+        console.warn('[api/events] supervisor link failed:', err)
       );
-    }
 
     if (supervisorIsNew) sendClaimEmail(body.supervisorEmail);
 
     if (body.responded) {
-      await adminDb.collection('activityLogs').add({
-        userId: uid,
-        endpoint: '/api/events',
-        type: 'heartbeat',
-        source: 'extension',
-        payload: { responded: true, response: body.response },
-        durationMs: Date.now() - start,
-        createdAt: new Date().toISOString(),
-      });
+      adminDb
+        .collection('activityLogs')
+        .add({
+          userId: uid,
+          endpoint: '/api/events',
+          type: 'heartbeat',
+          source: 'extension',
+          payload: { responded: true, response: body.response },
+          durationMs: Date.now() - start,
+          createdAt: new Date().toISOString(),
+        })
+        .catch((err) =>
+          console.warn('[api/events] activityLog write failed:', err)
+        );
       return NextResponse.json({ intervene: false });
     }
 
@@ -144,59 +154,94 @@ export async function POST(req: NextRequest) {
       createdAt: now,
     };
 
-    await adminDb.collection('events').add(event);
+    // Write heartbeat — non-critical
+    adminDb
+      .collection('events')
+      .add(event)
+      .catch((err) => console.warn('[api/events] event write failed:', err));
 
-    const [eventsSnap, lastInterventionSnap] = await Promise.all([
-      adminDb
-        .collection('events')
-        .where('userId', '==', uid)
-        .orderBy('createdAt', 'desc')
-        .limit(20)
-        .get(),
-      adminDb
-        .collection('interventions')
-        .where('userId', '==', uid)
-        .orderBy('createdAt', 'desc')
-        .limit(1)
-        .get(),
-    ]);
+    // Drift detection — if it fails, skip intervention rather than 500
+    let level = 0;
+    try {
+      const [eventsSnap, lastInterventionSnap] = await Promise.all([
+        adminDb
+          .collection('events')
+          .where('userId', '==', uid)
+          .orderBy('createdAt', 'desc')
+          .limit(20)
+          .get(),
+        adminDb
+          .collection('interventions')
+          .where('userId', '==', uid)
+          .orderBy('createdAt', 'desc')
+          .limit(1)
+          .get(),
+      ]);
 
-    const recentEvents = eventsSnap.docs.map(
-      (d) => ({ id: d.id, ...(d.data() as UserEvent) }) satisfies WithId<UserEvent>
-    );
+      const recentEvents = eventsSnap.docs.map(
+        (d) =>
+          ({ id: d.id, ...(d.data() as UserEvent) }) satisfies WithId<UserEvent>
+      );
+      const lastIntervention = lastInterventionSnap.empty
+        ? null
+        : (lastInterventionSnap.docs[0].data() as Intervention);
 
-    const lastIntervention = lastInterventionSnap.empty
-      ? null
-      : (lastInterventionSnap.docs[0].data() as Intervention);
+      level = detectDrift(recentEvents, lastIntervention).level;
+    } catch (err) {
+      console.warn(
+        '[api/events] drift detection failed, skipping intervention:',
+        err
+      );
+      return NextResponse.json({ intervene: false });
+    }
 
-    const { level } = detectDrift(recentEvents, lastIntervention);
-
-    await adminDb.collection('activityLogs').add({
-      userId: uid,
-      endpoint: '/api/events',
-      type: 'heartbeat',
-      source: 'extension',
-      payload: { tabCount: body.tabCount, activeTabTitle: body.activeTabTitle },
-      result: { level, intervene: level >= 2 },
-      durationMs: Date.now() - start,
-      createdAt: now,
-    });
+    // Activity log — non-critical
+    adminDb
+      .collection('activityLogs')
+      .add({
+        userId: uid,
+        endpoint: '/api/events',
+        type: 'heartbeat',
+        source: 'extension',
+        payload: {
+          tabCount: body.tabCount,
+          activeTabTitle: body.activeTabTitle,
+        },
+        result: { level, intervene: level >= 2 },
+        durationMs: Date.now() - start,
+        createdAt: now,
+      })
+      .catch((err) =>
+        console.warn('[api/events] activityLog write failed:', err)
+      );
 
     if (level < 2) {
       return NextResponse.json({ intervene: false });
     }
 
-    const { message, level: interventionLevel } = await createIntervention({
-      userId: uid,
-      level,
-      tabCount: body.tabCount,
-      activeTabTitle: body.activeTabTitle ?? '',
-      currentTask: null,
-    });
-
-    return NextResponse.json({ intervene: true, message, level: interventionLevel });
+    // Intervention — if Gemini fails, return no-intervene rather than 500
+    try {
+      const { message, level: interventionLevel } = await createIntervention({
+        userId: uid,
+        level,
+        tabCount: body.tabCount,
+        activeTabTitle: body.activeTabTitle ?? '',
+        currentTask: null,
+      });
+      return NextResponse.json({
+        intervene: true,
+        message,
+        level: interventionLevel,
+      });
+    } catch (err) {
+      console.warn('[api/events] intervention failed, skipping:', err);
+      return NextResponse.json({ intervene: false });
+    }
   } catch (err) {
     console.error('[api/events]', err);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

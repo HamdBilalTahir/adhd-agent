@@ -7,6 +7,7 @@ import globals from "globals";
 const eslintConfig = [
   js.configs.recommended,
   {
+    files: ["**/*.{js,jsx,ts,tsx}"],
     plugins: {
       "@next/next": nextPlugin,
       "@typescript-eslint": typescriptEslint,
@@ -16,6 +17,9 @@ const eslintConfig = [
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
+      },
+      globals: {
+        ...globals.browser,
       },
     },
     rules: {
